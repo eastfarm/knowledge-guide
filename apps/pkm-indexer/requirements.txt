@@ -23,7 +23,7 @@ unstructured
 # ...existing code...
 numpy==1.23.5
 python-multipart==0.0.9
-unstructured[md]
+unstructured
 
 
 google-auth
