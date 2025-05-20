@@ -4,6 +4,8 @@ import axios from 'axios';
 import StagingTable from '../components/StagingTable';
 import Link from 'next/link';
 
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+
 export default function Staging() {
   const [files, setFiles] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -17,7 +19,7 @@ export default function Staging() {
   const fetchFiles = async () => {
     setLoading(true);
     try {
-      const response = await axios.get('https://pkm-indexer-production.up.railway.app/staging');
+      const response = await axios.get(`${API_URL}/staging`);
       console.log("Staging response:", response.data);
       setFiles(response.data.files || []);
       setError('');
@@ -33,7 +35,7 @@ export default function Staging() {
     try {
       setLoading(true);
       console.log("Approving file:", file);
-      await axios.post('https://pkm-indexer-production.up.railway.app/approve', { file });
+      await axios.post(`${API_URL}/approve`, { file });
       // Force a refresh of the file list
       setRefreshKey(prev => prev + 1);
     } catch (err) {
