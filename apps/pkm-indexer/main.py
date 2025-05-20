@@ -42,7 +42,7 @@ app.add_middleware(
 
 SCOPES = ["https://www.googleapis.com/auth/drive"]
 REDIRECT_URI = os.environ.get("GOOGLE_REDIRECT_URI", "http://localhost:8000/oauth/callback")
-WEBHOOK_URL = os.environ.get("WEBHOOK_URL", "https://pkm-indexer-production.up.railway.app/drive-webhook")
+WEBHOOK_URL = os.environ.get("WEBHOOK_URL", "https://pkm-indexer-production-af69.up.railway.app/drive-webhook")
 CHANNEL_ID = str(uuid.uuid4())  # Unique channel ID for Google Drive notifications
 
 CLIENT_CONFIG = {

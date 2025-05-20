@@ -28,7 +28,7 @@ export default function Home() {
 
   const fetchFileStats = async () => {
     try {
-      const response = await axios.get('https://pkm-indexer-production.up.railway.app/file-stats');
+      const response = await axios.get('https://pkm-indexer-production-af69.up.railway.app/file-stats');
       setFileStats(response.data);
     } catch (error) {
       console.error('Failed to fetch file stats:', error);
@@ -37,7 +37,7 @@ export default function Home() {
 
   const fetchWebhookStatus = async () => {
     try {
-      const response = await axios.get('https://pkm-indexer-production.up.railway.app/webhook/status');
+      const response = await axios.get('https://pkm-indexer-production-af69.up.railway.app/webhook/status');
       setWebhookStatus(response.data);
     } catch (error) {
       console.error('Failed to fetch webhook status:', error);
@@ -47,7 +47,7 @@ export default function Home() {
 
   const handleQuery = async () => {
     try {
-      const response = await axios.post('https://pkm-indexer-production.up.railway.app/search', { query });
+      const response = await axios.post('https://pkm-indexer-production-af69.up.railway.app/search', { query });
       setResults(response.data.response);
     } catch (error) {
       setResults('Error: Could not fetch results');
@@ -56,7 +56,7 @@ export default function Home() {
 
   const triggerOrganize = async () => {
     try {
-      const response = await axios.post('https://pkm-indexer-production.up.railway.app/trigger-organize');
+      const response = await axios.post('https://pkm-indexer-production-af69.up.railway.app/trigger-organize');
       alert(`${response.data.status}`);
       // Refresh file stats after organizing
       fetchFileStats();
@@ -69,7 +69,7 @@ export default function Home() {
     setIsSyncing(true);
     setSyncStatus('Syncing with Google Drive...');
     try {
-      const response = await axios.post('https://pkm-indexer-production.up.railway.app/sync-drive');
+      const response = await axios.post('https://pkm-indexer-production-af69.up.railway.app/sync-drive');
       
       // Handle response with debug info
       if (response.data.debug) {
@@ -245,7 +245,7 @@ export default function Home() {
               </Link>
             </li>
             <li style={{ margin: '10px 0' }}>
-              <a href="https://pkm-indexer-production.up.railway.app/logs" target="_blank" rel="noopener noreferrer" style={{ 
+              <a href="https://pkm-indexer-production-af69.up.railway.app/logs" target="_blank" rel="noopener noreferrer" style={{ 
                 display: 'block',
                 padding: '12px', 
                 backgroundColor: '#f0f0f0', 
