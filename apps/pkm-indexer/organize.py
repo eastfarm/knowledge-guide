@@ -22,6 +22,9 @@ def infer_file_type(filename):
     if ext in [".png", ".jpg", ".jpeg", ".gif", ".bmp"]: return "image"
     if ext in [".mp3", ".wav", ".m4a"]: return "audio"
     if ext in [".doc", ".docx"]: return "document"
+    if ext in [".ppt", ".pptx"]: return "presentation"
+    if ext in [".xls", ".xlsx"]: return "spreadsheet"
+    if ext in [".rtf"]: return "rtf"
     return "other"
 
 def extract_text_from_pdf(path):
@@ -36,6 +39,105 @@ def extract_text_from_pdf(path):
             return text
     except Exception as e:
         return f"[PDF extraction failed: {e}]"
+    
+def extract_text_from_docx(path):
+    """Extract text content from a .docx file."""
+    try:
+        import docx
+        doc = docx.Document(path)
+        full_text = []
+        
+        # Extract text from paragraphs
+        for para in doc.paragraphs:
+            if para.text.strip():
+                full_text.append(para.text)
+        
+        # Extract text from tables
+        for table in doc.tables:
+            for row in table.rows:
+                for cell in row.cells:
+                    if cell.text.strip():
+                        full_text.append(cell.text)
+        
+        return "\n\n".join(full_text)
+    except Exception as e:
+        return f"[Word document extraction failed: {e}]"
+
+def extract_text_from_pptx(path):
+    """Extract text content from a .pptx file."""
+    try:
+        import pptx
+        prs = pptx.Presentation(path)
+        full_text = []
+        
+        for i, slide in enumerate(prs.slides):
+            slide_text = [f"--- Slide {i+1} ---"]
+            for shape in slide.shapes:
+                if hasattr(shape, "text") and shape.text.strip():
+                    slide_text.append(shape.text)
+            
+            if len(slide_text) > 1:  # Only add slides with actual content
+                full_text.append("\n".join(slide_text))
+        
+        return "\n\n".join(full_text)
+    except Exception as e:
+        return f"[PowerPoint extraction failed: {e}]"
+
+def extract_text_from_xlsx(path):
+    """Extract text content from an .xlsx file."""
+    try:
+        import openpyxl
+        wb = openpyxl.load_workbook(path, read_only=True, data_only=True)
+        full_text = []
+        
+        for sheet_name in wb.sheetnames:
+            sheet = wb[sheet_name]
+            sheet_text = [f"--- Sheet: {sheet_name} ---"]
+            
+            for row in sheet.iter_rows(values_only=True):
+                row_text = " | ".join([str(cell) if cell is not None else "" for cell in row])
+                if row_text.strip():
+                    sheet_text.append(row_text)
+            
+            if len(sheet_text) > 1:  # Only add sheets with actual content
+                full_text.append("\n".join(sheet_text))
+        
+        return "\n\n".join(full_text)
+    except Exception as e:
+        return f"[Excel extraction failed: {e}]"
+
+def extract_text_from_markdown(path):
+    """Extract text content from .md files, preserving the original markdown."""
+    try:
+        with open(path, 'r', encoding='utf-8') as file:
+            content = file.read()
+        # Just return the raw markdown - it's already text
+        return content
+    except Exception as e:
+        return f"[Markdown extraction failed: {e}]"
+
+def extract_text_from_rtf(path):
+    """Extract text content from .rtf files."""
+    try:
+        with open(path, 'r', encoding='utf-8', errors='ignore') as file:
+            content = file.read()
+            
+        # Basic RTF parsing to remove control codes
+        # For better parsing, we'd use the python-rtf library
+        # This is a simple fallback in case the library fails
+        text = re.sub(r'\\[a-z]+(-?\d+)?[ ]?', ' ', content)
+        text = re.sub(r'\{|\}|\\|\|', '', text)
+        
+        return text
+    except Exception as e:
+        try:
+            # If basic parsing fails, try using the python-rtf library
+            import striprtf
+            with open(path, 'r', encoding='utf-8', errors='ignore') as file:
+                content = file.read()
+            return striprtf.rtf_to_text(content)
+        except Exception as rtf_error:
+            return f"[RTF extraction failed: {e}, {rtf_error}]"
 
 def process_linkedin_pdf(text, path):
     """Process LinkedIn PDF content to extract the main post and ignore comments."""
@@ -522,253 +624,251 @@ def get_extract(content, file_type=None, urls_metadata=None, log_f=None, is_link
         
         return error_title, error_extract, fallback_tags
 
-def organize_files():
-    inbox = "pkm/Inbox"
-    meta_out = "pkm/Processed/Metadata"
-    source_out = "pkm/Processed/Sources"
-    logs = "pkm/Logs"
-
-    # Create a detailed log of this run
-    os.makedirs(inbox, exist_ok=True)
-    os.makedirs(meta_out, exist_ok=True)
-    os.makedirs(source_out, exist_ok=True)
-    os.makedirs(logs, exist_ok=True)
-
-    log_file_path = os.path.join(logs, f"log_organize_{int(time.time())}.md")
+def organize_files(input_folder="inbox", output_folder="assets", metadata_folder="metadata", api_key=None, openai_model="gpt-3.5-turbo", debug=False):
+    """
+    Organizes files from the input folder into the output folder.
+    Extracts metadata using OpenAI and stores it in the metadata folder.
     
-    # Return value to indicate success
-    success_count = 0
-    failed_files = []
+    Args:
+        input_folder: The folder containing files to be organized.
+        output_folder: The folder where organized files will be stored.
+        metadata_folder: The folder where metadata files will be stored.
+        api_key: OpenAI API key. If None, will use environment variable.
+        openai_model: OpenAI model to use for metadata extraction.
+        debug: If True, will print debug information.
+    """
+    if api_key:
+        openai.api_key = api_key
     
-    with open(log_file_path, "a", encoding="utf-8") as log_f:
-        log_f.write(f"# Organize run at {time.time()}\n\n")
-        log_f.write(f"OpenAI API Key status: {bool(openai.api_key)}\n\n")
-
-        files = [f for f in os.listdir(inbox) if os.path.isfile(os.path.join(inbox, f))]
-        log_f.write(f"Found files in Inbox: {files}\n")
-
-        for filename in files:
-            try:
-                log_f.write(f"\n\n## Processing {filename}\n")
-                input_path = os.path.join(inbox, filename)
-                file_type = infer_file_type(filename)
-
-                log_f.write(f"- File type detected: {file_type}\n")
-                
-                # Check for reprocessing notes
-                reprocess_notes_filename = f"{os.path.splitext(filename)[0]}_reprocess_notes.txt"
-                reprocess_notes_path = os.path.join(inbox, reprocess_notes_filename)
-                reprocess_notes = None
-                
-                if os.path.exists(reprocess_notes_path):
-                    with open(reprocess_notes_path, "r", encoding="utf-8") as f:
-                        reprocess_notes = f.read().strip()
-                    log_f.write(f"- Found reprocessing notes: {reprocess_notes[:100]}...\n")
-                
-                # Extract text based on file type
-                if file_type == "pdf":
-                    text_content = extract_text_from_pdf(input_path)
-                    extraction_method = "pdfplumber"
-                    
-                    # Check if this is a LinkedIn post
-                    is_linkedin = "linkedin.com" in text_content.lower() or "Profile viewers" in text_content[:500]
-                elif file_type == "image":
-                    text_content = extract_text_from_image(input_path)
-                    extraction_method = "ocr"
-                    is_linkedin = False
-                else:
-                    with open(input_path, "rb") as f:
-                        raw_bytes = f.read()
-                    try:
-                        text_content = raw_bytes.decode("utf-8")
-                        extraction_method = "decode"
-                    except UnicodeDecodeError:
-                        text_content = raw_bytes.decode("latin-1")
-                        extraction_method = "decode"
-                    is_linkedin = False
-
-                log_f.write(f"- Extraction method: {extraction_method}\n")
-                log_f.write(f"- Text content length: {len(text_content)} characters\n")
-                log_f.write(f"- Preview:\n```\n{text_content[:500]}\n```\n")
-
-                # Enhanced URL processing
-                urls, potential_titles = extract_urls(text_content)
-                log_f.write(f"- Detected URLs: {urls}\n")
-                log_f.write(f"- Potential titles: {potential_titles[:5]}\n")
-                
-                # For resource lists, store the list of references in metadata
-                if file_type == "pdf" and ("resources" in text_content.lower() or text_content.count("\n1)") > 1):
-                    has_resource_patterns = True
-                    log_f.write(f"- Detected resource list pattern\n")
-                else:
-                    has_resource_patterns = False
-                
-                urls_metadata = {}
-                
-                # Special handling for resource lists - add potential titles as "reference links"
-                if file_type == "pdf" and ("resources" in text_content.lower() or text_content.count("\n1)") > 1):
-                    if len(potential_titles) > 3:  # If we found several potential resource titles
-                        log_f.write(f"- Detected resource list with {len(potential_titles)} potential references\n")
-                        
-                        # Store reference metadata
-                        for title in potential_titles:
-                            urls_metadata[title] = {
-                                "title": title,
-                                "description": "Referenced resource",
-                                "url": f"reference:{title}"  # Use a special prefix to indicate this isn't a real URL
-                            }
-                
-                if urls:
-                    enriched, url_data = enrich_urls(urls, potential_titles)
-                    # Update the metadata with real URL data
-                    urls_metadata.update(url_data)
-                    
-                    # Add the enriched URLs to a separate section
-                    url_section = "\n\n---\n\n## Referenced Links\n" + enriched
-                    log_f.write(f"- Added enriched URL section\n")
-
-                base_name = Path(filename).stem
-                today = time.strftime("%Y-%m-%d")
-                md_filename = f"{today}_{base_name}.md"
-                log_f.write(f"- Output metadata filename: {md_filename}\n")
-
-                # Get extract from GPT
-                log_f.write(f"- Generating extract via OpenAI API\n")
-                try:
-                    # If there are reprocessing notes, include them in the log
-                    if reprocess_notes:
-                        log_f.write(f"- Using reprocessing notes: {reprocess_notes}\n")
-                    
-                    # Call OpenAI API with a higher timeout
-                    title, extract, tags = get_extract(text_content, file_type, urls_metadata, log_f, is_linkedin)
-                    log_f.write(f"- Extract generated successfully\n")
-                    log_f.write(f"- Title: {title}\n")
-                    log_f.write(f"- Tags: {tags}\n")
-                    log_f.write(f"- Extract length: {len(extract)} characters\n")
-                except Exception as extract_error:
-                    log_f.write(f"- ❌ Extract generation failed: {str(extract_error)}\n")
-                    title = "Extraction Failed: " + base_name
-                    extract = f"Failed to generate extract: {str(extract_error)}\n\nContent preview:\n{text_content[:500]}..."
-                    tags = ["extraction_failed", "needs_review"]
-
-                # Default category based on file type
-                if is_linkedin:
-                    category = "LinkedIn Post"
-                else:
-                    category = "Reference" if file_type == "pdf" else "Image" if file_type == "image" else "Note"
-                
-                # Try to improve tags when we have little information
-                if tags == ["uncategorized"] or tags == ["untagged"]:
-                    if file_type == "pdf" and "AI" in text_content:
-                        tags = ["AI", "Document", "Reference"]
-                    elif file_type == "image" and extraction_method == "ocr":
-                        tags = ["Image", "Slide", "Presentation"]
-
-                metadata = {
-                    "title": title,
-                    "date": today,
-                    "file_type": file_type,
-                    "source": filename,
-                    "source_url": None,
-                    "tags": tags,
-                    "category": category,
-                    "author": "Unknown",
-                    "extract_title": title,
-                    "extract_content": extract,
-                    "reviewed": False,
-                    "parse_status": "success",
-                    "extraction_method": extraction_method,
-                    "reprocess_status": "none",
-                    "reprocess_rounds": "0"
-                }
-                
-                # Add reprocessing notes if they exist
-                if reprocess_notes:
-                    metadata["reprocess_notes"] = reprocess_notes
-                
-                # Store URL information if relevant
-                if urls:
-                    metadata["referenced_urls"] = urls
-                    # Store url titles in a more accessible format
-                    url_titles = {}
-                    for url, data in urls_metadata.items():
-                        url_titles[url] = data.get("title", "Unknown")
-                    metadata["url_titles"] = url_titles
-                    metadata["url_section"] = url_section
-                
-                # For resource lists, store the list of references in metadata
-                if has_resource_patterns and len(potential_titles) > 3:
-                    metadata["referenced_resources"] = potential_titles
-                
-                # For short documents, keep the full content regardless of file type
-                # This applies to all file types where we've extracted text
-                keep_full_content = (
-                    len(text_content) < 10000 or  # Any text under 10K chars
-                    len(urls) > 0                 # Any content with URLs
-                )
-                
-                log_f.write(f"- Keeping full content: {keep_full_content}\n")
-                
-                # Create the frontmatter post
-                post = frontmatter.Post(
-                    content=text_content if keep_full_content else "[Content omitted]",
-                    **metadata
-                )
-
-                # Save the metadata file
-                meta_path = os.path.join(meta_out, md_filename)
-                log_f.write(f"- Writing metadata to: {meta_path}\n")
-                
-                try:
-                    with open(meta_path, "w", encoding="utf-8") as f:
-                        f.write(frontmatter.dumps(post))
-                    log_f.write(f"- ✅ Metadata file written successfully\n")
-                except Exception as write_error:
-                    log_f.write(f"- ❌ Failed to write metadata file: {str(write_error)}\n")
-                    failed_files.append((filename, f"Failed to write metadata: {str(write_error)}"))
-                    continue
-
-                # Move the original file to appropriate source directory
-                dest_dir = os.path.join(source_out, file_type)
-                os.makedirs(dest_dir, exist_ok=True)
-                dest_path = os.path.join(dest_dir, filename)
-                
-                log_f.write(f"- Moving original file to: {dest_path}\n")
-                try:
-                    shutil.move(input_path, dest_path)
-                    log_f.write(f"- ✅ Original file moved successfully\n")
-                    
-                    # Also remove reprocessing notes file if it exists
-                    if os.path.exists(reprocess_notes_path):
-                        os.remove(reprocess_notes_path)
-                        log_f.write(f"- ✅ Removed reprocessing notes file\n")
-                except Exception as move_error:
-                    log_f.write(f"- ❌ Failed to move original file: {str(move_error)}\n")
-                    # If we can't move the file but we've created the metadata, 
-                    # count it as a partial success
-                    if os.path.exists(meta_path):
-                        log_f.write(f"- ⚠️ Metadata created but original file not moved\n")
-                    else:
-                        failed_files.append((filename, f"Failed to move file: {str(move_error)}"))
-                        continue
-
-                log_f.write(f"✅ File {filename} processed successfully\n")
-                success_count += 1
-
-            except Exception as e:
-                log_f.write(f"❌ Error processing {filename}: {str(e)}\n")
-                print(f"❌ ERROR in organize_files(): {e}")
-                failed_files.append((filename, str(e)))
+    # Ensure all directories exist
+    os.makedirs(input_folder, exist_ok=True)
+    os.makedirs(output_folder, exist_ok=True)
+    os.makedirs(metadata_folder, exist_ok=True)
+    os.makedirs(os.path.join(output_folder, "sources"), exist_ok=True)
+    
+    # Get list of files in inbox
+    inbox_files = []
+    for root, _, files in os.walk(input_folder):
+        for file in files:
+            if file.startswith('.'):  # Skip hidden files
                 continue
-
-    print(f"🏁 organize_files() complete. Processed {success_count} files successfully. Failed: {len(failed_files)}")
+            inbox_files.append(os.path.join(root, file))
     
-    # Return a summary of what happened
-    return {
-        "success_count": success_count,
-        "failed_files": failed_files,
-        "log_file": log_file_path
+    print(f"Found {len(inbox_files)} files in inbox")
+    if len(inbox_files) == 0:
+        return
+    
+    # Process each file
+    for file_index, input_path in enumerate(inbox_files):
+        if debug:
+            print(f"Processing {file_index+1}/{len(inbox_files)}: {input_path}")
+        
+        # Skip if the file no longer exists (it might have been moved by a parallel process)
+        if not os.path.exists(input_path):
+            continue
+        
+        # Skip hidden files
+        if os.path.basename(input_path).startswith('.'):
+            continue
+        
+        try:
+            # Extract file name and determine type
+            file_name = os.path.basename(input_path)
+            file_type = infer_file_type(file_name)
+            
+            # Skip certain file types
+            if file_type == 'other':
+                print(f"Skipping unsupported file type: {file_name}")
+                # Move to a rejected folder instead of deleting
+                rejected_folder = os.path.join(output_folder, "rejected")
+                os.makedirs(rejected_folder, exist_ok=True)
+                rejected_path = os.path.join(rejected_folder, file_name)
+                shutil.move(input_path, rejected_path)
+                continue
+            
+            # Create source type directory if needed
+            source_type_dir = os.path.join(output_folder, "sources", file_type + "s")
+            os.makedirs(source_type_dir, exist_ok=True)
+            
+            # Generate a destination path
+            output_path = os.path.join(source_type_dir, file_name)
+            
+            # If a file with the same name exists, add a timestamp to make it unique
+            if os.path.exists(output_path):
+                name, ext = os.path.splitext(file_name)
+                timestamp = int(time.time())
+                file_name = f"{name}_{timestamp}{ext}"
+                output_path = os.path.join(source_type_dir, file_name)
+            
+            # Extract text content based on file type
+            if file_type == "pdf":
+                text_content = extract_text_from_pdf(input_path)
+                extraction_method = "pdfplumber"
+                
+                # Check if this is a LinkedIn post
+                is_linkedin = "linkedin.com" in text_content.lower() or "Profile viewers" in text_content[:500]
+            elif file_type == "image":
+                text_content = extract_text_from_image(input_path)
+                extraction_method = "ocr"
+                is_linkedin = False
+            elif file_type == "document":
+                text_content = extract_text_from_docx(input_path)
+                extraction_method = "docx"
+                is_linkedin = False
+            elif file_type == "presentation":
+                text_content = extract_text_from_pptx(input_path)
+                extraction_method = "pptx"
+                is_linkedin = False
+            elif file_type == "spreadsheet":
+                text_content = extract_text_from_xlsx(input_path)
+                extraction_method = "xlsx"
+                is_linkedin = False
+            elif file_type == "rtf":
+                text_content = extract_text_from_rtf(input_path)
+                extraction_method = "rtf"
+                is_linkedin = False
+            elif file_type == "text" and input_path.lower().endswith(".md"):
+                text_content = extract_text_from_markdown(input_path)
+                extraction_method = "markdown"
+                is_linkedin = False
+            else:
+                with open(input_path, "rb") as f:
+                    raw_bytes = f.read()
+                try:
+                    text_content = raw_bytes.decode("utf-8")
+                    extraction_method = "decode"
+                except UnicodeDecodeError:
+                    text_content = raw_bytes.decode("latin-1")
+                    extraction_method = "decode"
+                is_linkedin = False
+                
+            # Prepare metadata
+            content_preview = text_content[:2000] if text_content else ""
+            
+            # Generate safe filename for metadata
+            metadata_filename = re.sub(r'[^\w\-_\. ]', '_', file_name)
+            metadata_path = os.path.join(metadata_folder, f"{os.path.splitext(metadata_filename)[0]}.md")
+            
+            # Generate response type
+            response_type = "extract"
+            if is_linkedin:
+                response_type = "linkedin_post"
+            
+            # Generate metadata using OpenAI
+            today = time.strftime("%Y-%m-%d")
+            if text_content and len(text_content.strip()) > 0:
+                try:
+                    completion = openai.ChatCompletion.create(
+                        model=openai_model,
+                        messages=[
+                            {"role": "system", "content": f"You are an AI that extracts metadata from documents. The response should be a JSON object with the following fields: title (a concise title for the document), author (the author of the document or 'Unknown'), date (the publication date in YYYY-MM-DD format or '{today}' if unknown), category (one of: Article, Book, Note, Report, Social Media, Website, Email, Other), tags (an array of 2-5 relevant keywords/topics), extract_title (a specific title or headline from the content), extract_content (a 2-3 paragraph extract of the most important or interesting content). The response should be a markdown frontmatter style data."},
+                            {"role": "user", "content": f"Extract metadata from this {response_type}. The file is called '{file_name}'.\n\nContent preview:\n{content_preview}"}
+                        ]
+                    )
+                    
+                    # Parse OpenAI response
+                    ai_response = completion.choices[0].message.content.strip()
+                    
+                    # Check if response looks like JSON
+                    if ai_response.startswith('{') and ai_response.endswith('}'):
+                        try:
+                            metadata_dict = json.loads(ai_response)
+                            # Add additional metadata fields
+                            metadata_dict["parse_status"] = "success"
+                            metadata_dict["extraction_method"] = extraction_method
+                            metadata_dict["file_type"] = file_type
+                            metadata_dict["source"] = file_name
+                            metadata_dict["reviewed"] = False
+                            metadata_dict["reprocess_status"] = "none"
+                            metadata_dict["reprocess_rounds"] = "0"
+                            metadata_dict["source_url"] = None
+                            
+                            # Ensure tags is a list
+                            if not metadata_dict.get("tags"):
+                                metadata_dict["tags"] = []
+                            elif isinstance(metadata_dict.get("tags"), str):
+                                # Convert comma-separated string to list
+                                metadata_dict["tags"] = [tag.strip() for tag in metadata_dict["tags"].split(",")]
+                                
+                            # Special handling for LinkedIn posts
+                            if is_linkedin:
+                                if "tags" not in metadata_dict:
+                                    metadata_dict["tags"] = []
+                                if "linkedin" not in metadata_dict["tags"]:
+                                    metadata_dict["tags"].append("linkedin")
+                                
+                            # Create post with frontmatter
+                            post = frontmatter.Post(text_content, **metadata_dict)
+                            
+                            with open(metadata_path, 'wb') as f:
+                                frontmatter.dump(post, f)
+                                
+                            # Move source file to organized location
+                            shutil.move(input_path, output_path)
+                            
+                            print(f"Organized: {file_name} -> {output_path}")
+                        except json.JSONDecodeError:
+                            # Handle non-JSON response
+                            print(f"Non-JSON response for {file_name}")
+                            # Use basic metadata instead
+                            basic_metadata(input_path, output_path, metadata_path, file_name, file_type, text_content, extraction_method)
+                    else:
+                        # Handle non-JSON response
+                        print(f"Non-JSON response for {file_name}")
+                        # Use basic metadata instead
+                        basic_metadata(input_path, output_path, metadata_path, file_name, file_type, text_content, extraction_method)
+                except Exception as e:
+                    print(f"Error generating metadata for {file_name}: {str(e)}")
+                    # Use basic metadata instead
+                    basic_metadata(input_path, output_path, metadata_path, file_name, file_type, text_content, extraction_method)
+            else:
+                # No content extracted, use basic metadata
+                print(f"No content extracted from {file_name}")
+                basic_metadata(input_path, output_path, metadata_path, file_name, file_type, text_content, extraction_method)
+                
+        except Exception as e:
+            print(f"Error processing {input_path}: {str(e)}")
+            # Move to error folder
+            error_folder = os.path.join(output_folder, "errors")
+            os.makedirs(error_folder, exist_ok=True)
+            error_path = os.path.join(error_folder, os.path.basename(input_path))
+            try:
+                shutil.move(input_path, error_path)
+            except:
+                # If moving fails, just delete it
+                os.remove(input_path)
+    
+    print("File organization complete")
+    
+def basic_metadata(input_path, output_path, metadata_path, file_name, file_type, text_content, extraction_method):
+    """Creates basic metadata when OpenAI processing fails"""
+    today = time.strftime("%Y-%m-%d")
+    
+    # Create basic metadata
+    metadata_dict = {
+        "title": f"Unprocessed: {file_name}",
+        "author": "Unknown",
+        "date": today,
+        "category": "Other",
+        "tags": ["unprocessed"],
+        "extract_title": "Content extraction failed",
+        "extract_content": text_content[:500] + "..." if text_content and len(text_content) > 500 else text_content,
+        "parse_status": "basic",
+        "extraction_method": extraction_method,
+        "file_type": file_type,
+        "source": file_name,
+        "reviewed": False,
+        "reprocess_status": "none",
+        "reprocess_rounds": "0",
+        "source_url": None
     }
-
-if __name__ == "__main__":
-    organize_files()
+    
+    # Create frontmatter post
+    post = frontmatter.Post(text_content, **metadata_dict)
+    
+    # Save metadata file
+    with open(metadata_path, 'wb') as f:
+        frontmatter.dump(post, f)
+        
+    # Move source file to organized location
+    shutil.move(input_path, output_path)

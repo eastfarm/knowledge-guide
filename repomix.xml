@@ -1,0 +1,3558 @@
+This file is a merged representation of the entire codebase, combined into a single document by Repomix.
+The content has been processed where security check has been disabled.
+
+<file_summary>
+This section contains a summary of this file.
+
+<purpose>
+This file contains a packed representation of the entire repository's contents.
+It is designed to be easily consumable by AI systems for analysis, code review,
+or other automated processes.
+</purpose>
+
+<file_format>
+The content is organized as follows:
+1. This summary section
+2. Repository information
+3. Directory structure
+4. Repository files, each consisting of:
+  - File path as an attribute
+  - Full contents of the file
+</file_format>
+
+<usage_guidelines>
+- This file should be treated as read-only. Any changes should be made to the
+  original repository files, not this packed version.
+- When processing this file, use the file path to distinguish
+  between different files in the repository.
+- Be aware that this file may contain sensitive information. Handle it with
+  the same level of security as you would the original repository.
+</usage_guidelines>
+
+<notes>
+- Some files may have been excluded based on .gitignore rules and Repomix's configuration
+- Binary files are not included in this packed representation. Please refer to the Repository Structure section for a complete list of file paths, including binary files
+- Files matching patterns in .gitignore are excluded
+- Files matching default ignore patterns are excluded
+- Security check has been disabled - content may contain sensitive information
+- Files are sorted by Git change count (files with more changes are at the bottom)
+</notes>
+
+<additional_info>
+
+</additional_info>
+
+</file_summary>
+
+<directory_structure>
+apps/
+  pkm-app/
+    components/
+      StagingTable.js
+    pages/
+      _app.js
+      index.js
+      staging.js
+    diagnostics.js
+    next.config.js
+    package.json
+    railway.json
+  pkm-indexer/
+    index.py
+    main.py
+    nixpacks.toml
+    organize.py
+    requirements.txt
+docs/
+  PKM-System-Overview.md
+.gitignore
+LICENSE
+README.md
+</directory_structure>
+
+<files>
+This section contains the contents of the repository's files.
+
+<file path="apps/pkm-app/components/StagingTable.js">
+// File: apps/pkm-app/components/StagingTable.js
+import { useEffect, useState } from 'react';
+
+export default function StagingTable({ files, onApprove }) {
+  const [rows, setRows] = useState([]);
+
+  useEffect(() => {
+    setRows(files || []);
+    console.log("Loaded staging files:", files);
+  }, [files]);
+
+  const handleChange = (index, field, value) => {
+    const updated = [...rows];
+    if (field === "tags") {
+      // Handle tags as array or string
+      if (typeof value === 'string') {
+        updated[index].metadata.tags = value.split(",").map(t => t.trim());
+      } else {
+        updated[index].metadata.tags = value;
+      }
+    } else {
+      updated[index].metadata[field] = value;
+    }
+    setRows(updated);
+  };
+
+  const handleApprove = async (index) => {
+    const updatedFile = {
+      ...rows[index],
+      metadata: {
+        ...rows[index].metadata,
+        reviewed: true,
+        reprocess_status: "none"
+      }
+    };
+    await onApprove(updatedFile);
+  };
+
+  const handleReprocess = async (index) => {
+    const updatedFile = {
+      ...rows[index],
+      metadata: {
+        ...rows[index].metadata,
+        reprocess_status: "requested",
+        reprocess_rounds: (parseInt(rows[index].metadata.reprocess_rounds || 0) + 1).toString()
+      }
+    };
+    await onApprove(updatedFile);
+  };
+
+  // Helper function to ensure tags are displayed properly
+  const formatTags = (tags) => {
+    if (!tags) return '';
+    if (Array.isArray(tags)) return tags.join(', ');
+    if (typeof tags === 'string') {
+      // Handle YAML formatted tags
+      if (tags.startsWith('\n- ')) {
+        return tags.split('\n- ').filter(t => t).join(', ');
+      }
+      return tags;
+    }
+    return String(tags);
+  };
+
+  // Helper function to get extract content
+  const getExtractContent = (file) => {
+    if (!file || !file.metadata) return '';
+    
+    // First try getting the exact extract_content field
+    if (file.metadata.extract_content && file.metadata.extract_content.length > 10) {
+      return file.metadata.extract_content;
+    }
+    
+    // Fall back to extract field
+    if (file.metadata.extract && file.metadata.extract.length > 10) {
+      return file.metadata.extract;
+    }
+    
+    // Fall back to first 1000 chars of file content
+    if (file.content && file.content.length > 50) {
+      return file.content.substring(0, 1000) + (file.content.length > 1000 ? '...' : '');
+    }
+    
+    return 'No extract available';
+  };
+
+  const tableStyle = {
+    width: "100%", 
+    borderCollapse: "collapse",
+    tableLayout: "fixed"  // Fixed layout for better column control
+  };
+
+  const thStyle = {
+    textAlign: "left", 
+    padding: "8px", 
+    borderBottom: "2px solid #ddd",
+    backgroundColor: "#f5f5f5",
+    fontSize: "14px"
+  };
+
+  const cellStyle = {
+    padding: "8px",
+    verticalAlign: "top",
+    borderBottom: "1px solid #ddd"
+  };
+
+  return (
+    <div>
+      <table style={tableStyle}>
+        <colgroup>
+          <col style={{ width: "20%" }} /> {/* Title */}
+          <col style={{ width: "10%" }} /> {/* Category */}
+          <col style={{ width: "15%" }} /> {/* Tags */}
+          <col style={{ width: "45%" }} /> {/* Extract */}
+          <col style={{ width: "10%" }} /> {/* Actions */}
+        </colgroup>
+        <thead>
+          <tr>
+            <th style={thStyle}>Title</th>
+            <th style={thStyle}>Category</th>
+            <th style={thStyle}>Tags</th>
+            <th style={thStyle}>Extract</th>
+            <th style={thStyle}>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((file, index) => (
+            <tr key={index} style={{ borderBottom: "1px solid #eee" }}>
+              <td style={cellStyle}>
+                <input
+                  type="text"
+                  value={file.metadata?.title || file.metadata?.extract_title || file.name}
+                  onChange={(e) => handleChange(index, "title", e.target.value)}
+                  style={{
+                    width: "100%",
+                    padding: "4px",
+                    border: "1px solid #ddd",
+                    borderRadius: "4px",
+                    fontSize: "14px"
+                  }}
+                />
+                <div style={{ 
+                  fontSize: "12px", 
+                  color: "#666", 
+                  marginTop: "4px",
+                  whiteSpace: "nowrap",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis"
+                }}>
+                  {file.name}
+                </div>
+              </td>
+              <td style={cellStyle}>
+                <select
+                  value={file.metadata?.category || ""}
+                  onChange={(e) => handleChange(index, "category", e.target.value)}
+                  style={{
+                    width: "100%",
+                    padding: "4px",
+                    border: "1px solid #ddd",
+                    borderRadius: "4px",
+                    backgroundColor: "white"
+                  }}
+                >
+                  <option value="">Select...</option>
+                  <option value="Reference">Reference</option>
+                  <option value="Note">Note</option>
+                  <option value="Image">Image</option>
+                  <option value="LinkedIn Post">LinkedIn Post</option>
+                  <option value="Resource List">Resource List</option>
+                  <option value="Book">Book</option>
+                  <option value="Article">Article</option>
+                  <option value="Paper">Paper</option>
+                </select>
+              </td>
+              <td style={cellStyle}>
+                <input
+                  type="text"
+                  value={formatTags(file.metadata?.tags)}
+                  onChange={(e) => handleChange(index, "tags", e.target.value)}
+                  style={{
+                    width: "100%",
+                    padding: "4px",
+                    border: "1px solid #ddd",
+                    borderRadius: "4px",
+                    fontSize: "14px"
+                  }}
+                  placeholder="tag1, tag2, tag3"
+                />
+              </td>
+              <td style={cellStyle}>
+                <textarea
+                  value={getExtractContent(file)}
+                  onChange={(e) => handleChange(index, "extract_content", e.target.value)}
+                  style={{
+                    width: "100%",
+                    height: "200px",
+                    padding: "8px",
+                    border: "1px solid #ddd",
+                    borderRadius: "4px",
+                    fontSize: "14px",
+                    lineHeight: "1.4"
+                  }}
+                />
+                
+                <div style={{ marginTop: "8px" }}>
+                  <label style={{ 
+                    display: "block", 
+                    fontSize: "13px", 
+                    fontWeight: "bold",
+                    marginBottom: "4px"
+                  }}>
+                    Reprocess Notes:
+                  </label>
+                  <textarea
+                    value={file.metadata?.reprocess_notes || ""}
+                    onChange={(e) => handleChange(index, "reprocess_notes", e.target.value)}
+                    placeholder="Add notes for reprocessing (e.g., 'This is a quote, just extract key ideas')"
+                    style={{
+                      width: "100%",
+                      height: "60px",
+                      padding: "4px",
+                      border: "1px solid #ddd",
+                      borderRadius: "4px",
+                      fontSize: "13px"
+                    }}
+                  />
+                </div>
+              </td>
+              <td style={{...cellStyle, textAlign: "center"}}>
+                <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+                  <button 
+                    onClick={() => handleApprove(index)}
+                    style={{ 
+                      padding: "8px", 
+                      backgroundColor: "#4CAF50", 
+                      color: "white", 
+                      border: "none", 
+                      borderRadius: "4px",
+                      cursor: "pointer",
+                      fontSize: "14px"
+                    }}
+                  >
+                    Save
+                  </button>
+                  <button 
+                    onClick={() => handleReprocess(index)}
+                    style={{ 
+                      padding: "8px", 
+                      backgroundColor: "#2196F3", 
+                      color: "white", 
+                      border: "none", 
+                      borderRadius: "4px",
+                      cursor: "pointer",
+                      fontSize: "14px"
+                    }}
+                  >
+                    Reprocess
+                  </button>
+                </div>
+                
+                <div style={{ 
+                  marginTop: "10px", 
+                  fontSize: "12px", 
+                  color: "#666" 
+                }}>
+                  Status: {file.metadata?.reprocess_status || "none"}
+                  {file.metadata?.reprocess_rounds && 
+                    <div>Rounds: '{file.metadata.reprocess_rounds}'</div>
+                  }
+                </div>
+              </td>
+            </tr>
+          ))}
+          {rows.length === 0 && (
+            <tr>
+              <td colSpan="5" style={{ textAlign: "center", padding: "2rem", color: "gray" }}>
+                No files found for review. If you've just processed files, they may still be being indexed.
+              </td>
+            </tr>
+          )}
+        </tbody>
+      </table>
+      
+      <div style={{ 
+        marginTop: "20px", 
+        fontSize: "14px", 
+        color: "#666", 
+        padding: "15px", 
+        backgroundColor: "#f9f9f9", 
+        borderRadius: "4px",
+        display: "flex",
+        justifyContent: "space-between"
+      }}>
+        <div>
+          <strong>Save</strong>: Finalize the current extract and metadata.
+        </div>
+        <div>
+          <strong>Reprocess</strong>: Request AI to regenerate the extract with your notes.
+        </div>
+        <div>
+          <strong>Tags</strong>: Comma-separated values.
+        </div>
+      </div>
+    </div>
+  );
+}
+</file>
+
+<file path="apps/pkm-app/pages/_app.js">
+// File: apps/pkm-app/pages/_app.js
+function MyApp({ Component, pageProps }) {
+  return <Component {...pageProps} />;
+}
+
+export default MyApp;
+</file>
+
+<file path="apps/pkm-app/pages/index.js">
+// File: apps/pkm-app/pages/index.js
+import { useState, useEffect } from 'react';
+import axios from 'axios';
+import Link from 'next/link';
+
+export default function Home() {
+  const [query, setQuery] = useState('');
+  const [results, setResults] = useState('');
+  const [syncStatus, setSyncStatus] = useState('');
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [fileStats, setFileStats] = useState(null);
+  const [showAdvanced, setShowAdvanced] = useState(false);
+  const [webhookStatus, setWebhookStatus] = useState(null);
+
+  // Fetch file stats and webhook status when the component loads
+  useEffect(() => {
+    fetchFileStats();
+    fetchWebhookStatus();
+    
+    // Set up auto-refresh every 2 minutes
+    const interval = setInterval(() => {
+      fetchFileStats();
+      fetchWebhookStatus();
+    }, 120000);
+    
+    return () => clearInterval(interval);
+  }, []);
+
+  const fetchFileStats = async () => {
+    try {
+      const response = await axios.get('https://pkm-indexer-production-af69.up.railway.app/file-stats');
+      setFileStats(response.data);
+    } catch (error) {
+      console.error('Failed to fetch file stats:', error);
+    }
+  };
+
+  const fetchWebhookStatus = async () => {
+    try {
+      const response = await axios.get('https://pkm-indexer-production-af69.up.railway.app/webhook/status');
+      setWebhookStatus(response.data);
+    } catch (error) {
+      console.error('Failed to fetch webhook status:', error);
+      setWebhookStatus(null);
+    }
+  };
+
+  const handleQuery = async () => {
+    try {
+      const response = await axios.post('https://pkm-indexer-production-af69.up.railway.app/search', { query });
+      setResults(response.data.response);
+    } catch (error) {
+      setResults('Error: Could not fetch results');
+    }
+  };
+
+  const triggerOrganize = async () => {
+    try {
+      const response = await axios.post('https://pkm-indexer-production-af69.up.railway.app/trigger-organize');
+      alert(`${response.data.status}`);
+      // Refresh file stats after organizing
+      fetchFileStats();
+    } catch (error) {
+      alert(`Failed: ${error.message}`);
+    }
+  };
+
+  const triggerDriveSync = async () => {
+    setIsSyncing(true);
+    setSyncStatus('Syncing with Google Drive...');
+    try {
+      const response = await axios.post('https://pkm-indexer-production-af69.up.railway.app/sync-drive');
+      
+      // Handle response with debug info
+      if (response.data.debug) {
+        console.log("Sync debug info:", response.data.debug);
+        
+        // Check for specific issues
+        if (response.data.debug.error) {
+          setSyncStatus(`❌ ${response.data.status}: ${response.data.debug.error}`);
+        } else if (response.data.debug.inbox_files_count === 0) {
+          setSyncStatus(`ℹ️ ${response.data.status}`);
+        } else {
+          setSyncStatus(`✅ ${response.data.status}`);
+        }
+      } else {
+        setSyncStatus(`✅ ${response.data.status}`);
+      }
+      
+      // Refresh file stats after sync
+      fetchFileStats();
+    } catch (error) {
+      console.error("Sync error:", error);
+      if (error.response && error.response.data) {
+        setSyncStatus(`❌ Failed: ${error.response.data.status || error.message}`);
+      } else {
+        setSyncStatus(`❌ Failed: ${error.message}`);
+      }
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  return (
+    <div style={{ padding: '20px', maxWidth: '800px', margin: '0 auto', fontFamily: 'Arial, sans-serif' }}>
+      <h1 style={{ color: '#333', borderBottom: '2px solid #eee', paddingBottom: '10px' }}>Personal Knowledge Management</h1>
+      
+      {/* Main action button */}
+      <div style={{ 
+        marginBottom: '30px', 
+        display: 'flex', 
+        flexDirection: 'column',
+        alignItems: 'center',
+        backgroundColor: '#f8f9fa', 
+        padding: '20px',
+        borderRadius: '8px',
+        border: '1px solid #e9ecef'
+      }}>
+        <h2 style={{ marginTop: '0', marginBottom: '15px', textAlign: 'center' }}>Google Drive Integration</h2>
+        
+        {/* Auto-sync Status Badge */}
+        <div style={{ 
+          marginBottom: '15px', 
+          padding: '8px 15px', 
+          backgroundColor: webhookStatus?.is_active ? '#e8f5e9' : '#fff3e0', 
+          borderRadius: '4px',
+          border: `1px solid ${webhookStatus?.is_active ? '#a5d6a7' : '#ffe0b2'}`,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          width: '100%',
+          maxWidth: '500px',
+          fontSize: '15px'
+        }}>
+          {webhookStatus?.is_active ? (
+            <span>
+              ✅ Automatic synchronization is active. Files added to Google Drive will be processed immediately.
+            </span>
+          ) : (
+            <span>
+              ⚠️ Setting up automatic synchronization... This will be active shortly.
+            </span>
+          )}
+        </div>
+        
+        <button 
+          onClick={triggerDriveSync} 
+          disabled={isSyncing}
+          style={{ 
+            padding: '15px 25px', 
+            backgroundColor: isSyncing ? '#ccc' : '#2196F3', 
+            color: 'white', 
+            border: 'none', 
+            borderRadius: '4px',
+            cursor: isSyncing ? 'not-allowed' : 'pointer',
+            fontSize: '16px',
+            fontWeight: 'bold',
+            boxShadow: '0 2px 5px rgba(0,0,0,0.2)',
+            width: '100%',
+            maxWidth: '300px'
+          }}
+        >
+          {isSyncing ? 'Syncing...' : 'Sync Now'}
+        </button>
+        
+        {/* Sync status message */}
+        {syncStatus && (
+          <div style={{ 
+            marginTop: '15px', 
+            padding: '10px', 
+            backgroundColor: syncStatus.includes('✅') ? '#e8f5e9' : 
+                             syncStatus.includes('ℹ️') ? '#e3f2fd' : '#ffebee',
+            borderRadius: '4px',
+            width: '100%',
+            maxWidth: '500px',
+            textAlign: 'center'
+          }}>
+            {syncStatus}
+          </div>
+        )}
+        
+        <div style={{ fontSize: '13px', color: '#666', marginTop: '20px', textAlign: 'center' }}>
+          <p>Place files in your Google Drive's <strong>PKM/Inbox</strong> folder to process them automatically.</p>
+          <p>The "Sync Now" button manually checks for new files if you don't want to wait for auto-sync.</p>
+        </div>
+      </div>
+
+      {/* System Stats */}
+      {fileStats && (
+        <div style={{ 
+          backgroundColor: '#f9f9f9', 
+          padding: '15px', 
+          borderRadius: '5px',
+          marginBottom: '20px',
+          border: '1px solid #ddd'
+        }}>
+          <h2 style={{ marginTop: '0' }}>System Stats</h2>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '20px' }}>
+            <div>
+              <h3 style={{ fontSize: '16px', margin: '0 0 5px 0' }}>Inbox</h3>
+              <p style={{ margin: '0' }}>{fileStats.inbox_count || 0} files waiting</p>
+            </div>
+            <div>
+              <h3 style={{ fontSize: '16px', margin: '0 0 5px 0' }}>Processed</h3>
+              <p style={{ margin: '0' }}>{fileStats.metadata_count || 0} metadata files</p>
+            </div>
+            <div>
+              <h3 style={{ fontSize: '16px', margin: '0 0 5px 0' }}>Sources</h3>
+              <p style={{ margin: '0' }}>
+                {fileStats.source_types ? Object.entries(fileStats.source_types).map(([type, count], index) => (
+                  <span key={type}>
+                    {index > 0 && ', '}
+                    {type}: {count}
+                  </span>
+                )) : 'None'}
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div style={{ 
+        display: 'flex', 
+        gap: '20px', 
+        marginBottom: '30px',
+        flexWrap: 'wrap'
+      }}>
+        {/* Navigation */}
+        <div style={{ flex: '1', minWidth: '300px' }}>
+          <h2>Navigation</h2>
+          <ul style={{ listStyleType: 'none', padding: '0' }}>
+            <li style={{ margin: '10px 0' }}>
+              <Link href="/staging">
+                <a style={{ 
+                  display: 'block',
+                  padding: '12px', 
+                  backgroundColor: '#f0f0f0', 
+                  borderRadius: '4px',
+                  color: '#333',
+                  textDecoration: 'none',
+                  fontWeight: 'bold'
+                }}>
+                  🔍 Review Staging Files
+                </a>
+              </Link>
+            </li>
+            <li style={{ margin: '10px 0' }}>
+              <a href="https://pkm-indexer-production-af69.up.railway.app/logs" target="_blank" rel="noopener noreferrer" style={{ 
+                display: 'block',
+                padding: '12px', 
+                backgroundColor: '#f0f0f0', 
+                borderRadius: '4px',
+                color: '#333',
+                textDecoration: 'none',
+                fontWeight: 'bold'
+              }}>
+                📋 View Processing Logs
+              </a>
+            </li>
+          </ul>
+          
+          {/* Advanced controls (hidden by default) */}
+          <div style={{ marginTop: '20px' }}>
+            <button 
+              onClick={() => setShowAdvanced(!showAdvanced)}
+              style={{ 
+                backgroundColor: 'transparent',
+                border: 'none',
+                color: '#666',
+                textDecoration: 'underline',
+                cursor: 'pointer',
+                padding: '5px 0'
+              }}
+            >
+              {showAdvanced ? 'Hide Advanced Options' : 'Show Advanced Options'}
+            </button>
+            
+            {showAdvanced && (
+              <div style={{ 
+                marginTop: '10px',
+                padding: '15px',
+                backgroundColor: '#f5f5f5',
+                borderRadius: '4px'
+              }}>
+                <h3 style={{ fontSize: '16px', margin: '0 0 10px 0' }}>Advanced Controls</h3>
+                <button 
+                  onClick={triggerOrganize}
+                  style={{ 
+                    padding: '8px 15px',
+                    backgroundColor: '#9e9e9e',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '4px',
+                    cursor: 'pointer'
+                  }}
+                >
+                  Process Local Files
+                </button>
+                <p style={{ fontSize: '13px', color: '#666', marginTop: '8px' }}>
+                  Only use this if you've manually placed files in the local inbox.
+                </p>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Query section */}
+        <div style={{ flex: '1', minWidth: '300px' }}>
+          <h2>Query Knowledge Base</h2>
+          <input
+            type="text"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Ask your KB..."
+            style={{ 
+              width: '100%', 
+              padding: '12px', 
+              marginBottom: '10px',
+              borderRadius: '4px',
+              border: '1px solid #ddd'
+            }}
+          />
+          <button 
+            onClick={handleQuery} 
+            style={{ 
+              padding: '12px 20px',
+              backgroundColor: '#673AB7',
+              color: 'white',
+              border: 'none',
+              borderRadius: '4px',
+              cursor: 'pointer',
+              fontWeight: 'bold'
+            }}
+          >
+            Search
+          </button>
+          <div style={{ 
+            marginTop: '20px', 
+            whiteSpace: 'pre-wrap',
+            backgroundColor: results ? '#f9f9f9' : 'transparent',
+            padding: results ? '15px' : '0',
+            borderRadius: '4px',
+            border: results ? '1px solid #ddd' : 'none'
+          }}>
+            {results}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+</file>
+
+<file path="apps/pkm-app/pages/staging.js">
+// File: apps/pkm-app/pages/staging.js
+import { useState, useEffect } from 'react';
+import axios from 'axios';
+import StagingTable from '../components/StagingTable';
+import Link from 'next/link';
+
+export default function Staging() {
+  const [files, setFiles] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [refreshKey, setRefreshKey] = useState(0);
+
+  useEffect(() => {
+    fetchFiles();
+  }, [refreshKey]);
+
+  const fetchFiles = async () => {
+    setLoading(true);
+    try {
+      const response = await axios.get('https://pkm-indexer-production.up.railway.app/staging');
+      console.log("Staging response:", response.data);
+      setFiles(response.data.files || []);
+      setError('');
+    } catch (err) {
+      console.error("Failed to load staging files:", err);
+      setError('Failed to load staging files. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleApprove = async (file) => {
+    try {
+      setLoading(true);
+      console.log("Approving file:", file);
+      await axios.post('https://pkm-indexer-production.up.railway.app/approve', { file });
+      // Force a refresh of the file list
+      setRefreshKey(prev => prev + 1);
+    } catch (err) {
+      console.error("Approval error:", err);
+      setError('Failed to approve file. Please try again.');
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div style={{ padding: '20px', maxWidth: '1200px', margin: '0 auto', fontFamily: 'Arial, sans-serif' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+        <h1 style={{ color: '#333' }}>Review Staging Files</h1>
+        <div>
+          <Link href="/">
+            <a style={{ 
+              marginRight: '15px',
+              padding: '8px 15px', 
+              backgroundColor: '#f0f0f0', 
+              color: '#333',
+              textDecoration: 'none',
+              borderRadius: '4px'
+            }}>
+              ← Back to Home
+            </a>
+          </Link>
+          <button 
+            onClick={() => setRefreshKey(prev => prev + 1)}
+            style={{ 
+              padding: '8px 15px', 
+              backgroundColor: '#4CAF50', 
+              color: 'white', 
+              border: 'none', 
+              borderRadius: '4px',
+              cursor: 'pointer'
+            }}
+          >
+            Refresh
+          </button>
+        </div>
+      </div>
+      
+      {error && (
+        <div style={{ 
+          padding: '10px', 
+          backgroundColor: '#ffebee', 
+          color: '#c62828', 
+          borderRadius: '4px',
+          marginBottom: '20px'
+        }}>
+          {error}
+        </div>
+      )}
+      
+      {loading ? (
+        <div style={{ 
+          padding: '20px', 
+          textAlign: 'center', 
+          color: '#666',
+          backgroundColor: '#f5f5f5',
+          borderRadius: '4px'
+        }}>
+          Loading staging files...
+        </div>
+      ) : (
+        <StagingTable files={files} onApprove={handleApprove} />
+      )}
+      
+      <div style={{ marginTop: '30px', fontSize: '14px', color: '#666', padding: '15px', backgroundColor: '#f9f9f9', borderRadius: '4px' }}>
+        <h3 style={{ margin: '0 0 10px 0' }}>About the Staging Process</h3>
+        <p>
+          Files appear here after being processed but before being added to your knowledge base.
+          This gives you a chance to review and modify the AI-generated metadata before approval.
+        </p>
+        <p>
+          <strong>New files will appear after:</strong>
+        </p>
+        <ol>
+          <li>Adding files to your Google Drive PKM/Inbox folder</li>
+          <li>Clicking "Sync Google Drive" on the home page</li>
+          <li>The system processes the files (this may take a moment)</li>
+        </ol>
+      </div>
+    </div>
+  );
+}
+</file>
+
+<file path="apps/pkm-app/diagnostics.js">
+// File: apps/pkm-app/diagnostics.js
+const fs = require('fs');
+const path = require('path');
+
+console.log('Running PKM App Diagnostics...');
+
+// Check if key files exist
+const requiredFiles = [
+  'package.json',
+  'next.config.js',
+  'pages/_app.js',
+  'pages/index.js',
+  'pages/staging.js',
+  'components/StagingTable.js'
+];
+
+console.log('\nChecking required files:');
+requiredFiles.forEach(file => {
+  const exists = fs.existsSync(path.join(process.cwd(), file));
+  console.log(`- ${file}: ${exists ? '✅ Found' : '❌ Missing'}`);
+});
+
+// Check package.json
+console.log('\nChecking package.json:');
+const pkg = require('./package.json');
+console.log(`- Next.js version: ${pkg.dependencies.next}`);
+console.log(`- React version: ${pkg.dependencies.react}`);
+console.log(`- Build script: ${pkg.scripts.build}`);
+
+// Check next.config.js if it exists
+if (fs.existsSync(path.join(process.cwd(), 'next.config.js'))) {
+  console.log('\nNext.config.js exists');
+  try {
+    const config = require('./next.config.js');
+    console.log('- Config loaded successfully');
+    console.log('- Config contents:', config);
+  } catch (e) {
+    console.log('- Error loading config:', e.message);
+  }
+}
+
+// Check imports in index.js
+if (fs.existsSync(path.join(process.cwd(), 'pages/index.js'))) {
+  console.log('\nAnalyzing index.js:');
+  const indexContent = fs.readFileSync(path.join(process.cwd(), 'pages/index.js'), 'utf8');
+  
+  // Simple check for import statements
+  const imports = indexContent.match(/import .+ from ['"].+['"]/g) || [];
+  console.log('- Imports found:');
+  imports.forEach(imp => console.log(`  ${imp}`));
+  
+  // Check for potential syntax errors
+  console.log('- Syntax check:');
+  try {
+    eval('(' + indexContent + ')');
+    console.log('  No obvious syntax errors (basic check only)');
+  } catch (e) {
+    console.log(`  Potential syntax error: ${e.message}`);
+  }
+}
+
+console.log('\nDiagnostics complete. Add this output to your support request.');
+</file>
+
+<file path="apps/pkm-app/next.config.js">
+// File: apps/pkm-app/next.config.js
+/** @type {import('next').NextConfig} */
+const nextConfig = {
+  reactStrictMode: true,
+  swcMinify: false, // Disable swc minification to help with debugging
+  eslint: {
+    ignoreDuringBuilds: true,
+  },
+  // Add log information during build
+  webpack: (config, { isServer, dev }) => {
+    // Force webpack to include detailed error information
+    config.optimization.minimize = false;
+    
+    if (!isServer && !dev) {
+      // More verbose webpack output for client builds
+      config.infrastructureLogging = {
+        level: 'verbose',
+      };
+    }
+    
+    return config;
+  },
+};
+
+module.exports = nextConfig;
+</file>
+
+<file path="apps/pkm-app/package.json">
+{
+  "name": "pkm-app",
+  "version": "1.0.0",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "build:verbose": "NODE_OPTIONS='--trace-warnings' next build",
+    "start": "next start",
+    "lint": "next lint",
+    "check": "node diagnostics.js"
+  },
+  "dependencies": {
+    "next": "13.4.19",
+    "react": "18.2.0",
+    "react-dom": "18.2.0",
+    "axios": "1.4.0"
+  },
+  "devDependencies": {
+    "eslint": "8.47.0",
+    "eslint-config-next": "13.4.19"
+  }
+}
+</file>
+
+<file path="apps/pkm-app/railway.json">
+{
+  "$schema": "https://railway.app/railway.schema.json",
+  "build": {
+    "builder": "NIXPACKS",
+    "buildCommand": "npm run check && npm run build:verbose"
+  },
+  "deploy": {
+    "startCommand": "npm start",
+    "healthcheckPath": "/",
+    "healthcheckTimeout": 300,
+    "restartPolicyType": "ON_FAILURE",
+    "restartPolicyMaxRetries": 3
+  }
+}
+</file>
+
+<file path="apps/pkm-indexer/index.py">
+# Updated imports for langchain 0.2.0
+from langchain_community.document_loaders import DirectoryLoader
+from langchain_text_splitters import RecursiveCharacterTextSplitter
+from langchain_community.embeddings import HuggingFaceEmbeddings
+from langchain_community.vectorstores import FAISS
+import os
+import asyncio
+
+async def indexKB():
+    try:
+        # Create folders if they don't exist
+        os.makedirs("pkm", exist_ok=True)
+        os.makedirs("pkm_index", exist_ok=True)
+        
+        # Check if any markdown files exist
+        has_md_files = False
+        for root, dirs, files in os.walk("pkm"):
+            if any(file.endswith(".md") for file in files):
+                has_md_files = True
+                break
+        
+        if not has_md_files:
+            print("No markdown files found in pkm directory. Creating empty index.")
+            # Create an empty index
+            embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
+            vectorstore = FAISS.from_texts(["placeholder"], embeddings)
+            vectorstore.save_local("pkm_index")
+            return
+            
+        # Continue with normal indexing if files exist
+        loader = DirectoryLoader('pkm', glob="**/*.md")
+        documents = loader.load()
+        text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
+        texts = text_splitter.split_documents(documents)
+        embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
+        vectorstore = FAISS.from_documents(texts, embeddings)
+        vectorstore.save_local("pkm_index")
+        print("Indexed PKM to pkm_index")
+    except Exception as e:
+        print(f"Indexing failed: {e}")
+        # Create an empty index as fallback
+        try:
+            embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
+            vectorstore = FAISS.from_texts(["Error creating index. Please add content to pkm folder."], embeddings)
+            vectorstore.save_local("pkm_index")
+        except Exception as inner_e:
+            print(f"Failed to create fallback index: {inner_e}")
+
+async def searchKB(query):
+    try:
+        if not os.path.exists("pkm_index"):
+            return "No index found. Please add documents to your PKM system first."
+            
+        embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
+        vectorstore = FAISS.load_local("pkm_index", embeddings)
+        docs = vectorstore.similarity_search(query, k=3)
+        
+        if not docs:
+            return "No relevant documents found for your query."
+            
+        return "\n\n---\n\n".join([doc.page_content for doc in docs])
+    except Exception as e:
+        return f"Search failed: {e}"
+</file>
+
+<file path="apps/pkm-indexer/main.py">
+# File: apps/pkm-indexer/main.py
+from fastapi import FastAPI, Request, Response, BackgroundTasks
+from fastapi.responses import RedirectResponse, JSONResponse, FileResponse
+from fastapi.middleware.cors import CORSMiddleware
+import os
+import io
+import json
+import base64
+import asyncio
+import uuid
+import time
+from google_auth_oauthlib.flow import Flow
+from google.oauth2.credentials import Credentials
+from googleapiclient.discovery import build
+from googleapiclient.http import MediaIoBaseDownload, MediaFileUpload
+from organize import organize_files
+from index import indexKB, searchKB
+import logging
+from datetime import datetime, timedelta
+import frontmatter
+
+app = FastAPI()
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler()
+    ]
+)
+logger = logging.getLogger("pkm-indexer")
+
+# Add CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Allow all origins
+    allow_credentials=True,
+    allow_methods=["*"],  # Allow all methods
+    allow_headers=["*"],  # Allow all headers
+)
+
+SCOPES = ["https://www.googleapis.com/auth/drive"]
+REDIRECT_URI = os.environ.get("GOOGLE_REDIRECT_URI", "http://localhost:8000/oauth/callback")
+WEBHOOK_URL = os.environ.get("WEBHOOK_URL", "https://pkm-indexer-production-af69.up.railway.app/drive-webhook")
+CHANNEL_ID = str(uuid.uuid4())  # Unique channel ID for Google Drive notifications
+
+CLIENT_CONFIG = {
+    "web": {
+        "client_id": os.environ.get("GOOGLE_CLIENT_ID", ""),
+        "client_secret": os.environ.get("GOOGLE_CLIENT_SECRET", ""),
+        "redirect_uris": [REDIRECT_URI],
+        "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+        "token_uri": "https://oauth2.googleapis.com/token",
+    }
+}
+
+# Store webhook data
+webhook_state = {
+    "channel_id": CHANNEL_ID,
+    "resource_id": None,
+    "expiration": None,
+    "inbox_id": None,
+    "last_renewal": None
+}
+
+# ─── AUTH FLOW ─────────────────────────────────────────────────────
+
+@app.get("/auth/initiate")
+def auth_initiate():
+    flow = Flow.from_client_config(CLIENT_CONFIG, scopes=SCOPES, redirect_uri=REDIRECT_URI)
+    auth_url, _ = flow.authorization_url(prompt="consent", access_type="offline")
+    return RedirectResponse(auth_url)
+
+@app.get("/oauth/callback")
+async def auth_callback(request: Request):
+    code = request.query_params.get("code")
+    if not code:
+        return JSONResponse(status_code=400, content={"error": "Missing auth code"})
+    flow = Flow.from_client_config(CLIENT_CONFIG, scopes=SCOPES, redirect_uri=REDIRECT_URI)
+    flow.fetch_token(code=code)
+    creds = flow.credentials
+    return JSONResponse(content=json.loads(creds.to_json()))
+
+# ─── UPLOAD HELPERS ───────────────────────────────────────────────
+
+def upload_file_to_drive(service, local_path, filename, parent_id):
+    media = MediaFileUpload(local_path, resumable=True)
+    body = {"name": filename, "parents": [parent_id]}
+    uploaded = service.files().create(body=body, media_body=media, fields="id").execute()
+    return uploaded.get("id")
+
+def find_or_create_folder(service, parent_id, name):
+    query = f"'{parent_id}' in parents and name='{name}' and mimeType='application/vnd.google-apps.folder'"
+    res = service.files().list(q=query, fields="files(id)").execute()
+    folders = res.get("files", [])
+    if folders:
+        return folders[0]['id']
+    folder_metadata = {
+        "name": name,
+        "parents": [parent_id],
+        "mimeType": "application/vnd.google-apps.folder"
+    }
+    folder = service.files().create(body=folder_metadata, fields="id").execute()
+    return folder['id']
+
+# ─── WEBHOOK MANAGEMENT ─────────────────────────────────────────────
+
+@app.post("/drive-webhook")
+async def handle_drive_webhook(request: Request, background_tasks: BackgroundTasks):
+    """
+    Handle Google Drive webhook notifications when files change
+    """
+    # Verify request is from Google Drive
+    channel_id = request.headers.get("X-Goog-Channel-ID")
+    resource_state = request.headers.get("X-Goog-Resource-State")
+    
+    # Log the notification
+    logger.info(f"Received webhook notification: {resource_state} for channel {channel_id}")
+    
+    # Check resource state - we're interested in 'change' events
+    if resource_state in ["sync", "change", "update"]:
+        # Process the notification in the background
+        background_tasks.add_task(process_drive_changes)
+        
+    # Always respond with 204 No Content quickly to acknowledge receipt
+    return Response(status_code=204)
+
+async def process_drive_changes():
+    """
+    Process changes in Google Drive inbox folder
+    """
+    logger.info("Processing Drive changes...")
+    try:
+        # Make sure logs directory exists
+        log_dir = "pkm/Logs"
+        os.makedirs(log_dir, exist_ok=True)
+        timestamp = int(time.time())
+        
+        # Create an initial processing log
+        with open(f"{log_dir}/webhook_process_{timestamp}.md", "w", encoding="utf-8") as f:
+            f.write(f"# Webhook Processing Started at {datetime.now().isoformat()}\n\n")
+        
+        # Call the sync_drive function to process files
+        result = sync_drive()
+        
+        # Log the result regardless of success/failure
+        with open(f"{log_dir}/webhook_sync_{timestamp}.md", "w", encoding="utf-8") as f:
+            f.write(f"# Webhook Sync at {datetime.now().isoformat()}\n\n")
+            f.write(f"## Result\n\n")
+            if isinstance(result, dict):
+                f.write(json.dumps(result, indent=2))
+                
+                # Log detailed debug info if available
+                if 'debug' in result:
+                    f.write("\n\n## Debug Info\n\n")
+                    f.write(json.dumps(result['debug'], indent=2))
+                    
+                # Log success or failure count
+                if result.get("uploaded"):
+                    logger.info(f"Webhook sync completed: {len(result.get('uploaded', []))} files processed")
+                    f.write(f"\n\n## Processed Files\n\n")
+                    for filename in result.get("uploaded", []):
+                        f.write(f"- {filename}\n")
+                elif result.get("status"):
+                    logger.info(f"Webhook sync completed with status: {result.get('status')}")
+            else:
+                f.write(str(result))
+                
+        # If we have downloaded files but no uploads, something likely went wrong
+        if isinstance(result, dict) and result.get("downloaded") and not result.get("uploaded"):
+            skipped = result.get("skipped", [])
+            if skipped:
+                logger.error(f"Files were downloaded but not processed: {skipped}")
+                with open(f"{log_dir}/webhook_warning_{timestamp}.md", "w", encoding="utf-8") as f:
+                    f.write(f"# Webhook Warning at {datetime.now().isoformat()}\n\n")
+                    f.write(f"## Files Downloaded But Not Processed\n\n")
+                    for filename in skipped:
+                        f.write(f"- {filename}\n")
+                    if 'error' in result:
+                        f.write(f"\n## Error\n\n{result['error']}\n")
+                    if 'debug' in result and result['debug'].get('error'):
+                        f.write(f"\n## Debug Error\n\n{result['debug']['error']}\n")
+    except Exception as e:
+        logger.error(f"Error processing Drive changes: {str(e)}")
+        
+        # Create a detailed error log
+        try:
+            log_dir = "pkm/Logs"
+            os.makedirs(log_dir, exist_ok=True)
+            timestamp = int(time.time())
+            with open(f"{log_dir}/webhook_error_{timestamp}.md", "w", encoding="utf-8") as f:
+                f.write(f"# Webhook Error at {datetime.now().isoformat()}\n\n")
+                f.write(f"## Error\n\n")
+                f.write(str(e))
+                f.write("\n\n## Traceback\n\n```\n")
+                import traceback
+                f.write(traceback.format_exc())
+                f.write("\n```\n")
+        except Exception as log_error:
+            logger.error(f"Failed to create error log: {log_error}")
+
+def setup_webhook_registration():
+    """
+    Set up or renew Google Drive webhook for the PKM/Inbox folder
+    """
+    try:
+        token_json = os.environ.get("GOOGLE_TOKEN_JSON")
+        if not token_json:
+            logger.error("Google Drive credentials missing - can't set up webhook")
+            return False
+            
+        creds = Credentials.from_authorized_user_info(json.loads(token_json), SCOPES)
+        drive_service = build('drive', 'v3', credentials=creds)
+        
+        # First, find or create the PKM/Inbox folder
+        pkm_id = find_pkm_folder(drive_service)
+        inbox_id = find_inbox_folder(drive_service, pkm_id)
+        
+        if not inbox_id:
+            logger.error("Could not find or create PKM/Inbox folder")
+            return False
+        
+        # Store the inbox_id for later use
+        webhook_state["inbox_id"] = inbox_id
+        
+        # If there's an existing webhook, stop it first
+        if webhook_state["resource_id"]:
+            try:
+                drive_service.channels().stop(
+                    body={
+                        "id": webhook_state["channel_id"],
+                        "resourceId": webhook_state["resource_id"]
+                    }
+                ).execute()
+                logger.info(f"Stopped existing webhook with channel ID: {webhook_state['channel_id']}")
+            except Exception as e:
+                logger.warning(f"Error stopping existing webhook: {str(e)}")
+        
+        # Generate a new channel ID for each registration
+        webhook_state["channel_id"] = str(uuid.uuid4())
+        
+        # Register for changes on the inbox folder
+        webhook_expiration = datetime.now() + timedelta(days=7)  # Max 7 days for webhook
+        expiration_ms = int(webhook_expiration.timestamp() * 1000)
+        
+        # Set up the webhook using Drive API
+        webhook_body = {
+            "id": webhook_state["channel_id"],
+            "type": "web_hook",
+            "address": WEBHOOK_URL,
+            "expiration": expiration_ms,
+        }
+        
+        # Create the webhook
+        response = drive_service.files().watch(
+            fileId=inbox_id,
+            body=webhook_body
+        ).execute()
+        
+        # Store the webhook information
+        webhook_state["resource_id"] = response.get("resourceId")
+        webhook_state["expiration"] = response.get("expiration")
+        webhook_state["last_renewal"] = datetime.now().isoformat()
+        
+        logger.info(f"Webhook set up successfully. Channel ID: {webhook_state['channel_id']}, Expires: {webhook_expiration}")
+        
+        return True
+    except Exception as e:
+        logger.error(f"Webhook setup error: {str(e)}")
+        return False
+
+def check_webhook_expiration():
+    """Check if webhook needs renewal and renew if needed"""
+    try:
+        # If webhook isn't set up or doesn't have expiration, set it up
+        if not webhook_state["expiration"]:
+            return setup_webhook_registration()
+            
+        # Check if expiration is approaching (less than 1 day remaining)
+        expiration_time = datetime.fromtimestamp(int(webhook_state["expiration"]) / 1000)
+        now = datetime.now()
+        
+        # If webhook expires in less than 24 hours, renew it
+        if expiration_time - now < timedelta(hours=24):
+            logger.info("Webhook expiration approaching, renewing...")
+            return setup_webhook_registration()
+            
+        # Webhook is still valid
+        return True
+    except Exception as e:
+        logger.error(f"Error checking webhook expiration: {str(e)}")
+        return False
+
+@app.get("/webhook/status")
+def webhook_status():
+    """
+    Get the status of the Google Drive webhook - for monitoring only
+    """
+    try:
+        now = datetime.now()
+        is_expired = False
+        
+        if webhook_state["expiration"]:
+            expiration_time = datetime.fromtimestamp(int(webhook_state["expiration"]) / 1000)
+            is_expired = now > expiration_time
+        
+        is_active = webhook_state["resource_id"] is not None and not is_expired
+        
+        status_info = {
+            "is_active": is_active,
+            "channel_id": webhook_state["channel_id"],
+            "inbox_id": webhook_state["inbox_id"],
+            "expiration": None,
+            "last_renewal": webhook_state["last_renewal"]
+        }
+        
+        if webhook_state["expiration"]:
+            expiration_time = datetime.fromtimestamp(int(webhook_state["expiration"]) / 1000)
+            status_info["expiration"] = expiration_time.isoformat()
+            status_info["time_remaining"] = str(expiration_time - now) if expiration_time > now else "Expired"
+        
+        return status_info
+    except Exception as e:
+        logger.error(f"Webhook status error: {str(e)}")
+        return JSONResponse(
+            status_code=500, 
+            content={"status": f"Failed to get webhook status: {str(e)}", "error": str(e)}
+        )
+
+# ─── FOLDER HELPERS ───────────────────────────────────────────────
+
+def find_pkm_folder(service):
+    """Find or create the PKM folder"""
+    query_pkm = "name='PKM' and mimeType='application/vnd.google-apps.folder' and trashed=false"
+    pkm_results = service.files().list(q=query_pkm, fields="files(id,name)").execute()
+    pkm_folders = pkm_results.get('files', [])
+    
+    if not pkm_folders:
+        # PKM folder doesn't exist, create it
+        pkm_id = find_or_create_folder(service, "root", "PKM")
+        logger.info(f"Created PKM folder: {pkm_id}")
+    else:
+        pkm_id = pkm_folders[0]['id']
+        logger.info(f"Found PKM folder: {pkm_id}")
+    
+    return pkm_id
+
+def find_inbox_folder(service, pkm_id):
+    """Find or create the Inbox folder under PKM"""
+    query_inbox = f"'{pkm_id}' in parents and name='Inbox' and mimeType='application/vnd.google-apps.folder' and trashed=false"
+    inbox_results = service.files().list(q=query_inbox, fields="files(id,name)").execute()
+    inbox_folders = inbox_results.get('files', [])
+    
+    if not inbox_folders:
+        # Inbox folder doesn't exist, create it
+        inbox_id = find_or_create_folder(service, pkm_id, "Inbox")
+        logger.info(f"Created Inbox folder: {inbox_id}")
+    else:
+        inbox_id = inbox_folders[0]['id']
+        logger.info(f"Found Inbox folder: {inbox_id}")
+    
+    return inbox_id
+
+# ─── SYNC DRIVE ───────────────────────────────────────────────────
+
+@app.post("/sync-drive")
+def sync_drive():
+    try:
+        # Create a log directory if it doesn't exist
+        logs_path = "pkm/Logs"
+        os.makedirs(logs_path, exist_ok=True)
+        timestamp = int(time.time())
+        
+        # Start a log entry for this sync operation
+        with open(f"{logs_path}/sync_{timestamp}.md", "w", encoding="utf-8") as log_f:
+            log_f.write(f"# Google Drive Sync at {datetime.now().isoformat()}\n\n")
+            
+            LOCAL_INBOX = "pkm/Inbox"
+            LOCAL_METADATA = "pkm/Processed/Metadata"
+            LOCAL_SOURCES = "pkm/Processed/Sources"
+            downloaded = []
+            uploaded = []
+            debug_info = {
+                "token_exists": False,
+                "drive_folders": [],
+                "inbox_files_count": 0,
+                "error": None
+            }
+
+            # Ensure local directories exist
+            os.makedirs(LOCAL_INBOX, exist_ok=True)
+            os.makedirs(LOCAL_METADATA, exist_ok=True)
+            os.makedirs(LOCAL_SOURCES, exist_ok=True)
+            
+            token_json = os.environ.get("GOOGLE_TOKEN_JSON")
+            if not token_json:
+                log_f.write("❌ Failed - Google Drive credentials missing\n")
+                return {"status": "Failed - Google Drive credentials missing", "debug": debug_info}
+                
+            debug_info["token_exists"] = True
+            log_f.write("✅ Google Drive credentials found\n")
+            
+            try:
+                creds = Credentials.from_authorized_user_info(json.loads(token_json), SCOPES)
+                service = build('drive', 'v3', credentials=creds)
+                log_f.write("✅ Authenticated with Google Drive\n")
+            except Exception as auth_error:
+                log_f.write(f"❌ Authentication error: {str(auth_error)}\n")
+                debug_info["error"] = f"Authentication error: {str(auth_error)}"
+                return {"status": "Failed to authenticate with Google Drive", "debug": debug_info}
+
+            # 1. Locate PKM + subfolders
+            try:
+                # Find or create the PKM folder
+                pkm_id = find_pkm_folder(service)
+                debug_info["drive_folders"].append(f"PKM folder: {pkm_id}")
+                log_f.write(f"✅ Found/created PKM folder: {pkm_id}\n")
+                
+                # Find or create the Inbox folder
+                inbox_id = find_inbox_folder(service, pkm_id)
+                debug_info["drive_folders"].append(f"Inbox folder: {inbox_id}")
+                log_f.write(f"✅ Found/created Inbox folder: {inbox_id}\n")
+                
+                # Update webhook state with inbox ID if needed
+                if inbox_id and not webhook_state["inbox_id"]:
+                    webhook_state["inbox_id"] = inbox_id
+                
+                # Continue with other folders
+                processed_id = find_or_create_folder(service, pkm_id, "Processed")
+                metadata_id = find_or_create_folder(service, processed_id, "Metadata")
+                sources_id = find_or_create_folder(service, processed_id, "Sources")
+                
+                debug_info["drive_folders"].append(f"Processed folder: {processed_id}")
+                debug_info["drive_folders"].append(f"Metadata folder: {metadata_id}")
+                debug_info["drive_folders"].append(f"Sources folder: {sources_id}")
+                log_f.write(f"✅ All required folders exist/created in Google Drive\n")
+            except Exception as folder_error:
+                log_f.write(f"❌ Folder creation error: {str(folder_error)}\n")
+                debug_info["error"] = f"Folder creation error: {str(folder_error)}"
+                return {"status": "Failed to locate or create Google Drive folders", "debug": debug_info}
+
+            # 2. Download files from /Inbox
+            try:
+                query_files = f"'{inbox_id}' in parents and trashed = false"
+                files_result = service.files().list(q=query_files, fields="files(id, name)").execute()
+                files = files_result.get('files', [])
+                
+                debug_info["inbox_files_count"] = len(files)
+                log_f.write(f"ℹ️ Found {len(files)} files in Google Drive Inbox\n")
+                
+                if not files:
+                    log_f.write("ℹ️ No files to process in Google Drive Inbox\n")
+                    return {
+                        "status": "✅ Synced - No new files to process",
+                        "debug": debug_info
+                    }
+                
+                # List the files found
+                log_f.write("\n## Files found in Google Drive Inbox\n\n")
+                for f in files:
+                    log_f.write(f"- {f['name']} (ID: {f['id']})\n")
+                
+                log_f.write("\n## Downloading files\n\n")
+                
+                for f in files:
+                    file_id = f['id']
+                    file_name = f['name']
+                    local_path = os.path.join(LOCAL_INBOX, file_name)
+                    log_f.write(f"Downloading {file_name}... ")
+                    try:
+                        request = service.files().get_media(fileId=file_id)
+                        with io.FileIO(local_path, 'wb') as fh:
+                            downloader = MediaIoBaseDownload(fh, request)
+                            done = False
+                            while not done:
+                                _, done = downloader.next_chunk()
+                        downloaded.append((file_id, file_name))
+                        log_f.write(f"✅ Success\n")
+                    except Exception as individual_download_error:
+                        log_f.write(f"❌ Failed: {str(individual_download_error)}\n")
+                
+                log_f.write(f"\n✅ Downloaded {len(downloaded)} files from Google Drive Inbox\n")
+            except Exception as download_error:
+                log_f.write(f"❌ Download error: {str(download_error)}\n")
+                debug_info["error"] = f"Download error: {str(download_error)}"
+                return {"status": "Failed to download files from Google Drive", "debug": debug_info}
+
+            # 3. Run metadata extraction
+            try:
+                log_f.write("\n## Processing files with organize_files()\n\n")
+                organize_result = organize_files()
+                log_f.write(f"✅ organize_files() processed {organize_result['success_count']} files successfully\n")
+                if organize_result['failed_files']:
+                    log_f.write(f"⚠️ {len(organize_result['failed_files'])} files failed processing:\n")
+                    for failed_file, error in organize_result['failed_files']:
+                        log_f.write(f"  - {failed_file}: {error}\n")
+            except Exception as organize_error:
+                log_f.write(f"❌ Organization error: {str(organize_error)}\n")
+                debug_info["error"] = f"Organization error: {str(organize_error)}"
+                return {
+                    "status": "Files downloaded but processing failed", 
+                    "downloaded": [f[1] for f in downloaded],
+                    "debug": debug_info
+                }
+
+            # 4. Upload files and metadata
+            log_f.write("\n## Uploading processed files to Google Drive\n\n")
+            for file_id, file_name in downloaded:
+                base = os.path.splitext(file_name)[0]
+                md_filename = next((f for f in os.listdir(LOCAL_METADATA) if base in f), None)
+                local_md_path = os.path.join(LOCAL_METADATA, md_filename) if md_filename else None
+                file_type = infer_file_type(file_name)
+                local_original_path = os.path.join(LOCAL_SOURCES, file_type, file_name)
+
+                log_f.write(f"Processing {file_name}:\n")
+                try:
+                    # Upload metadata
+                    if local_md_path and os.path.exists(local_md_path):
+                        log_f.write(f"  - Uploading metadata {md_filename}... ")
+                        md_id = upload_file_to_drive(service, local_md_path, md_filename, metadata_id)
+                        debug_info["drive_folders"].append(f"Uploaded metadata: {md_filename} to {metadata_id}")
+                        log_f.write(f"✅ Success (ID: {md_id})\n")
+                    else:
+                        log_f.write(f"  - ❌ Missing .md file at {local_md_path}\n")
+                        debug_info["error"] = f"Missing .md file for {file_name} at {local_md_path}"
+                        raise Exception(f"Missing .md file for {file_name}")
+
+                    # Upload original
+                    if os.path.exists(local_original_path):
+                        ft_folder_id = find_or_create_folder(service, sources_id, file_type)
+                        log_f.write(f"  - Uploading source file to {file_type} folder... ")
+                        orig_id = upload_file_to_drive(service, local_original_path, file_name, ft_folder_id)
+                        debug_info["drive_folders"].append(f"Uploaded source file: {file_name} to {ft_folder_id}")
+                        log_f.write(f"✅ Success (ID: {orig_id})\n")
+                    else:
+                        log_f.write(f"  - ❌ Missing source file at {local_original_path}\n")
+                        debug_info["error"] = f"Missing source file for {file_name} at {local_original_path}"
+                        raise Exception(f"Missing source file for {file_name}")
+
+                    # Delete from Inbox (only if both uploads succeeded)
+                    log_f.write(f"  - Deleting original from inbox... ")
+                    delete_result = service.files().delete(fileId=file_id).execute()
+                    debug_info["drive_folders"].append(f"Deleted inbox file: {file_id}")
+                    uploaded.append(file_name)
+                    log_f.write(f"✅ Success\n")
+
+                except Exception as e:
+                    log_f.write(f"  - ❌ Failed: {str(e)}\n")
+                    debug_info["error"] = f"Upload error for {file_name}: {str(e)}"
+                    print(f"❌ Failed to upload/delete {file_name}: {e}")
+
+            log_f.write(f"\n## Summary\n")
+            log_f.write(f"- Downloaded: {len(downloaded)} files\n")
+            log_f.write(f"- Successfully processed: {len(uploaded)} files\n")
+            skipped = [f[1] for f in downloaded if f[1] not in uploaded]
+            if skipped:
+                log_f.write(f"- Skipped: {len(skipped)} files\n")
+                for file in skipped:
+                    log_f.write(f"  - {file}\n")
+
+            return {
+                "status": f"✅ Synced and organized - {len(uploaded)} files successfully processed",
+                "downloaded": [f[1] for f in downloaded],
+                "uploaded": uploaded,
+                "skipped": skipped,
+                "debug": debug_info
+            }
+    except Exception as e:
+        logger.error(f"Sync error: {str(e)}")
+        # Try to create an error log
+        try:
+            logs_path = "pkm/Logs"
+            os.makedirs(logs_path, exist_ok=True)
+            timestamp = int(time.time())
+            with open(f"{logs_path}/sync_error_{timestamp}.md", "w", encoding="utf-8") as log_f:
+                log_f.write(f"# Sync Error at {datetime.now().isoformat()}\n\n")
+                log_f.write(f"Error: {str(e)}\n\n")
+                log_f.write("Traceback:\n```\n")
+                import traceback
+                log_f.write(traceback.format_exc())
+                log_f.write("\n```\n")
+        except:
+            pass
+        return {
+            "status": f"❌ Sync failed: {str(e)}",
+            "error": str(e)
+        }
+
+
+# ─── UTILITIES ─────────────────────────────────────────────────────
+
+def infer_file_type(filename):
+    ext = os.path.splitext(filename)[1].lower()
+    if ext in [".md", ".txt"]: return "text"
+    if ext in [".pdf"]: return "pdf"
+    if ext in [".png", ".jpg", ".jpeg", ".gif", ".bmp"]: return "image"
+    if ext in [".mp3", ".wav", ".m4a"]: return "audio"
+    if ext in [".doc", ".docx"]: return "document"
+    return "other"
+
+# ─── FILE STATS ENDPOINT ────────────────────────────────────────────
+
+@app.get("/file-stats")
+def get_file_stats():
+    """Get statistics about files in the system"""
+    stats = {
+        "inbox_count": 0,
+        "metadata_count": 0,
+        "source_types": {},
+    }
+    
+    # Count files in Inbox
+    inbox_path = "pkm/Inbox"
+    if os.path.exists(inbox_path):
+        stats["inbox_count"] = len([f for f in os.listdir(inbox_path) if os.path.isfile(os.path.join(inbox_path, f))])
+    
+    # Count metadata files
+    metadata_path = "pkm/Processed/Metadata"
+    if os.path.exists(metadata_path):
+        stats["metadata_count"] = len([f for f in os.listdir(metadata_path) if f.endswith(".md")])
+    
+    # Count source files by type
+    sources_path = "pkm/Processed/Sources"
+    if os.path.exists(sources_path):
+        for source_type in os.listdir(sources_path):
+            type_path = os.path.join(sources_path, source_type)
+            if os.path.isdir(type_path):
+                file_count = len([f for f in os.listdir(type_path) if os.path.isfile(os.path.join(type_path, f))])
+                if file_count > 0:
+                    stats["source_types"][source_type] = file_count
+    
+    return stats
+
+# ─── LOGS ENDPOINT ────────────────────────────────────────────────
+
+@app.get("/logs")
+def list_logs():
+    """List all available log files"""
+    logs_path = "pkm/Logs"
+    if not os.path.exists(logs_path):
+        return {"logs": []}
+        
+    log_files = [f for f in os.listdir(logs_path) if f.endswith(".md")]
+    log_files.sort(reverse=True)  # Most recent first
+    
+    return {
+        "logs": log_files,
+        "count": len(log_files)
+    }
+
+@app.get("/logs/{log_file}")
+def get_log(log_file: str):
+    """Get the content of a specific log file"""
+    log_path = f"pkm/Logs/{log_file}"
+    
+    if not os.path.exists(log_path):
+        return JSONResponse(status_code=404, content={"error": "Log file not found"})
+        
+    with open(log_path, "r", encoding="utf-8") as f:
+        content = f.read()
+        
+    return {"filename": log_file, "content": content}
+
+# ─── STAGING AND APPROVAL ENDPOINTS ─────────────────────────────────
+
+@app.get("/staging")
+def get_staging():
+    """List files in staging that need review"""
+    metadata_path = "pkm/Processed/Metadata"
+    if not os.path.exists(metadata_path):
+        return {"files": []}
+        
+    staging_files = []
+    
+    for filename in os.listdir(metadata_path):
+        if not filename.endswith(".md"):
+            continue
+            
+        file_path = os.path.join(metadata_path, filename)
+        try:
+            # Use frontmatter to properly parse the YAML frontmatter
+            with open(file_path, "r", encoding="utf-8") as f:
+                content = f.read()
+            
+            # Check if this is a frontmatter file
+            if not content.startswith("---"):
+                continue
+                
+            # Use the frontmatter library for more reliable parsing
+            post = frontmatter.loads(content)
+            
+            # Extract metadata and content
+            metadata = dict(post.metadata)
+            file_content = post.content
+            
+            # Only include files that haven't been reviewed yet
+            # Check for various forms of the "reviewed" field
+            is_reviewed = False
+            if "reviewed" in metadata:
+                # Handle different formats of the reviewed field
+                if isinstance(metadata["reviewed"], bool):
+                    is_reviewed = metadata["reviewed"]
+                elif isinstance(metadata["reviewed"], str):
+                    is_reviewed = metadata["reviewed"].lower() == "true"
+                    
+            # Include the file if it hasn't been reviewed
+            if not is_reviewed:
+                # Process tags to ensure they're always a list
+                if "tags" in metadata:
+                    # Handle YAML formatted tags (with newlines and dashes)
+                    if isinstance(metadata["tags"], str):
+                        if metadata["tags"].startswith("\n-"):
+                            tags = [tag.strip() for tag in metadata["tags"].split("\n-") if tag.strip()]
+                            metadata["tags"] = tags
+                        # Handle array-like string format
+                        elif metadata["tags"].startswith("[") and metadata["tags"].endswith("]"):
+                            tags_str = metadata["tags"][1:-1].strip()
+                            metadata["tags"] = [tag.strip().strip("'\"") for tag in tags_str.split(",") if tag.strip()]
+                        # Handle comma-separated string format  
+                        elif "," in metadata["tags"]:
+                            metadata["tags"] = [tag.strip() for tag in metadata["tags"].split(",") if tag.strip()]
+                        # Handle single tag as string
+                        else:
+                            metadata["tags"] = [metadata["tags"]]
+                
+                # Ensure we have the extract content
+                if "extract_content" not in metadata and "extract" in metadata:
+                    metadata["extract_content"] = metadata["extract"]
+                
+                # Add debugging log
+                print(f"Adding file to staging: {filename}, reviewed = {is_reviewed}")
+                
+                # Add to staging files list
+                staging_files.append({
+                    "name": filename,
+                    "metadata": metadata,
+                    "content": file_content
+                })
+                
+                # Log for debugging
+                print(f"Added staging file: {filename}")
+                if "tags" in metadata:
+                    print(f"  Tags: {metadata['tags']}")
+                if "extract_content" in metadata:
+                    print(f"  Extract length: {len(metadata['extract_content'])} chars")
+                
+        except Exception as e:
+            print(f"Error processing {filename}: {e}")
+    
+    print(f"Returning {len(staging_files)} files for staging")
+    return {"files": staging_files}
+
+@app.post("/approve")
+async def approve_file(payload: dict):
+    """Approve a file or request reprocessing"""
+    file_data = payload.get("file")
+    if not file_data:
+        return JSONResponse(status_code=400, content={"error": "Missing file data"})
+        
+    file_name = file_data.get("name")
+    metadata = file_data.get("metadata", {})
+    content = file_data.get("content", "")
+    
+    if not file_name:
+        return JSONResponse(status_code=400, content={"error": "Missing file name"})
+
+    # Get full file path
+    file_path = f"pkm/Processed/Metadata/{file_name}"
+    
+    # Create logs directory if it doesn't exist
+    logs_path = "pkm/Logs"
+    os.makedirs(logs_path, exist_ok=True)
+    timestamp = int(time.time())
+    
+    # Create a log for this operation
+    log_file = f"{logs_path}/approval_{timestamp}.md"
+    with open(log_file, "w", encoding="utf-8") as log_f:
+        log_f.write(f"# File Approval at {datetime.now().isoformat()}\n\n")
+        log_f.write(f"File: {file_name}\n")
+        log_f.write(f"Action: {metadata.get('reprocess_status', 'save')}\n\n")
+
+        # Handle reprocess request
+        if metadata.get("reprocess_status") == "requested":
+            try:
+                log_f.write(f"## Reprocessing requested\n")
+                
+                # Update the file with reprocessing status
+                metadata["reprocess_status"] = "in_progress"
+                
+                # Format tags for YAML
+                if "tags" in metadata and isinstance(metadata["tags"], list):
+                    tags_yaml = "\n- " + "\n- ".join(metadata["tags"])
+                    metadata["tags"] = tags_yaml
+                
+                # Rebuild the file with updated metadata
+                metadata_lines = []
+                for key, value in metadata.items():
+                    metadata_lines.append(f"{key}: {value}")
+                    
+                file_content = "---\n" + "\n".join(metadata_lines) + "\n---\n\n" + content
+                
+                # Save the updated file
+                with open(file_path, "w", encoding="utf-8") as f:
+                    f.write(file_content)
+                
+                log_f.write(f"Updated metadata with reprocess_status = in_progress\n")
+                
+                # Get the source file info for reprocessing
+                source_file = metadata.get("source")
+                file_type = metadata.get("file_type", "unknown")
+                
+                if source_file and file_type:
+                    source_path = f"pkm/Processed/Sources/{file_type}/{source_file}"
+                    
+                    log_f.write(f"Source file: {source_path}\n")
+                    
+                    if os.path.exists(source_path):
+                        # Create a temporary copy in the inbox to reprocess
+                        inbox_path = "pkm/Inbox"
+                        os.makedirs(inbox_path, exist_ok=True)
+                        temp_path = os.path.join(inbox_path, source_file)
+                        
+                        # Copy the source file to inbox
+                        import shutil
+                        shutil.copy(source_path, temp_path)
+                        log_f.write(f"Copied source file to inbox: {temp_path}\n")
+                        
+                        # Save reprocessing notes to a separate file for AI to use
+                        if metadata.get("reprocess_notes"):
+                            notes_file = os.path.join(inbox_path, f"{os.path.splitext(source_file)[0]}_reprocess_notes.txt")
+                            with open(notes_file, "w", encoding="utf-8") as f:
+                                f.write(metadata.get("reprocess_notes", ""))
+                            log_f.write(f"Created reprocessing notes file: {notes_file}\n")
+                        
+                        # Now trigger organize_files to process it
+                        log_f.write(f"Triggering organize_files()\n")
+                        
+                        try:
+                            # Run organize_files directly
+                            result = organize_files()
+                            
+                            log_f.write(f"organize_files() result:\n")
+                            log_f.write(f"- Success count: {result['success_count']}\n")
+                            log_f.write(f"- Failed files: {result['failed_files']}\n")
+                            
+                            # Update the metadata file with reprocess complete status
+                            # First reload the file to get any changes from organize_files
+                            try:
+                                # Look for newly generated metadata file
+                                new_md_filename = None
+                                metadata_path = "pkm/Processed/Metadata"
+                                today = datetime.now().strftime("%Y-%m-%d")
+                                
+                                # First try with today's date
+                                potential_name = f"{today}_{os.path.splitext(source_file)[0]}.md"
+                                if os.path.exists(os.path.join(metadata_path, potential_name)):
+                                    new_md_filename = potential_name
+                                else:
+                                    # Try finding by base name
+                                    base_name = os.path.splitext(source_file)[0]
+                                    for f in os.listdir(metadata_path):
+                                        if base_name in f and f.endswith(".md") and f != file_name:
+                                            new_md_filename = f
+                                            break
+                                
+                                if new_md_filename:
+                                    log_f.write(f"Found new metadata file: {new_md_filename}\n")
+                                    
+                                    # Now we need to:
+                                    # 1. Delete the original metadata file
+                                    # 2. Return information about the new file
+                                    try:
+                                        # Remove the old metadata file
+                                        if os.path.exists(file_path):
+                                            os.remove(file_path)
+                                            log_f.write(f"Deleted original metadata file: {file_path}\n")
+                                    except Exception as remove_error:
+                                        log_f.write(f"Error removing original file: {str(remove_error)}\n")
+                                    
+                                    return {
+                                        "status": "reprocessed",
+                                        "filename": file_name,
+                                        "new_filename": new_md_filename,
+                                        "message": "File reprocessed successfully"
+                                    }
+                                else:
+                                    log_f.write(f"No new metadata file found after reprocessing\n")
+                                    
+                                    # Update the original file to mark reprocessing as complete but failed
+                                    with open(file_path, "r", encoding="utf-8") as f:
+                                        content = f.read()
+                                    
+                                    # Update the reprocess status
+                                    if "reprocess_status: in_progress" in content:
+                                        content = content.replace("reprocess_status: in_progress", "reprocess_status: failed")
+                                    
+                                    with open(file_path, "w", encoding="utf-8") as f:
+                                        f.write(content)
+                                    
+                                    log_f.write(f"Updated original file with reprocess_status = failed\n")
+                                    
+                                    return {
+                                        "status": "reprocess_failed",
+                                        "filename": file_name,
+                                        "message": "Reprocessing failed - no new metadata found"
+                                    }
+                                
+                            except Exception as post_process_error:
+                                log_f.write(f"Error after organize_files: {str(post_process_error)}\n")
+                                return JSONResponse(
+                                    status_code=500, 
+                                    content={
+                                        "status": "reprocess_error",
+                                        "error": f"Error after reprocessing: {str(post_process_error)}"
+                                    }
+                                )
+                            
+                        except Exception as organize_error:
+                            log_f.write(f"Error running organize_files: {str(organize_error)}\n")
+                            
+                            # Update the status to indicate failure
+                            with open(file_path, "r", encoding="utf-8") as f:
+                                content = f.read()
+                            
+                            # Update the reprocess status
+                            if "reprocess_status: in_progress" in content:
+                                content = content.replace("reprocess_status: in_progress", "reprocess_status: failed")
+                            
+                            with open(file_path, "w", encoding="utf-8") as f:
+                                f.write(content)
+                            
+                            return JSONResponse(
+                                status_code=500, 
+                                content={
+                                    "status": "reprocess_error",
+                                    "error": f"Failed to reprocess: {str(organize_error)}"
+                                }
+                            )
+                            
+                    else:
+                        log_f.write(f"Source file not found: {source_path}\n")
+                        return JSONResponse(
+                            status_code=404, 
+                            content={"error": f"Source file not found: {source_path}"}
+                        )
+                else:
+                    log_f.write(f"Missing source info: file={source_file}, type={file_type}\n")
+                    return JSONResponse(
+                        status_code=400, 
+                        content={"error": "Missing source file information"}
+                    )
+                    
+            except Exception as e:
+                log_f.write(f"Reprocessing error: {str(e)}\n")
+                return JSONResponse(
+                    status_code=500, 
+                    content={"error": f"Failed to queue reprocessing: {str(e)}"}
+                )
+        
+        # Standard approval flow (Save)
+        try:
+            log_f.write(f"## Saving file\n")
+            
+            # Format tags for YAML
+            if "tags" in metadata and isinstance(metadata["tags"], list):
+                tags_yaml = "\n- " + "\n- ".join(metadata["tags"])
+                metadata["tags"] = tags_yaml
+            
+            # Make sure reviewed is set to true
+            metadata["reviewed"] = "true"
+            
+            # Rebuild the file with updated metadata
+            metadata_lines = []
+            for key, value in metadata.items():
+                metadata_lines.append(f"{key}: {value}")
+                
+            file_content = "---\n" + "\n".join(metadata_lines) + "\n---\n\n" + content
+            
+            # Save the updated file
+            with open(file_path, "w", encoding="utf-8") as f:
+                f.write(file_content)
+                
+            log_f.write(f"File saved successfully\n")
+                
+            return {"status": "approved", "filename": file_name}
+        except Exception as e:
+            log_f.write(f"Save error: {str(e)}\n")
+            return JSONResponse(status_code=500, content={"error": f"Failed to approve: {str(e)}"})
+
+# ─── PROCESS FILES ENDPOINT ─────────────────────────────────────────
+
+@app.post("/trigger-organize")
+def trigger_organize():
+    """Trigger the file organization process"""
+    try:
+        result = organize_files()
+        return {
+            "status": f"Files processed and organized: {result['success_count']} successful, {len(result['failed_files'])} failed",
+            "log_file": result['log_file'],
+            "failed_files": result['failed_files']
+        }
+    except Exception as e:
+        return {"status": f"Organization error: {str(e)}", "error": str(e)}
+
+# ─── SEARCH ENDPOINT ───────────────────────────────────────────────
+
+@app.post("/search")
+async def search(payload: dict):
+    query = payload.get("query", "")
+    if not query:
+        return {"response": "Please provide a search query"}
+        
+    try:
+        # First make sure the index exists
+        await indexKB()
+        # Then search
+        response = await searchKB(query)
+        return {"response": response}
+    except Exception as e:
+        return {"response": f"Search error: {str(e)}"}
+
+# ─── UPLOAD ENDPOINT ───────────────────────────────────────────────
+
+@app.post("/upload/{folder}")
+async def upload_file(folder: str, payload: dict):
+    """Upload a file to a specific folder"""
+    filename = payload.get("filename")
+    content_b64 = payload.get("content")
+    
+    if not filename or not content_b64:
+        return JSONResponse(status_code=400, content={"error": "Missing filename or content"})
+        
+    # Create the folder if it doesn't exist
+    folder_path = f"pkm/{folder}"
+    os.makedirs(folder_path, exist_ok=True)
+    
+    # Decode base64 content
+    try:
+        content_bytes = base64.b64decode(content_b64)
+    except:
+        return JSONResponse(status_code=400, content={"error": "Invalid base64 content"})
+        
+    # Save the file
+    file_path = os.path.join(folder_path, filename)
+    with open(file_path, "wb") as f:
+        f.write(content_bytes)
+        
+    return {"status": f"File uploaded to {folder}/{filename}"}
+
+# ─── ROOT ENDPOINT ───────────────────────────────────────────────
+
+@app.get("/")
+def root():
+    return {"status": "PKM Indexer is running", "endpoints": [
+        "/staging - Get files ready for review",
+        "/approve - Approve a file from staging",
+        "/trigger-organize - Process new files",
+        "/sync-drive - Sync with Google Drive",
+        "/search - Search the knowledge base",
+        "/upload/{folder} - Upload a file to a folder",
+        "/logs - View processing logs",
+        "/file-stats - Get file statistics",
+        "/webhook/status - Check automatic sync status"
+    ]}
+
+# ─── BACKGROUND TASK TO CHECK WEBHOOK EXPIRATION ─────────────────
+
+async def renew_webhook_if_needed():
+    """Periodic task to check and renew webhook if needed"""
+    while True:
+        try:
+            check_webhook_expiration()
+            # Check every 12 hours
+            await asyncio.sleep(12 * 60 * 60)
+        except Exception as e:
+            logger.error(f"Error in webhook renewal background task: {str(e)}")
+            # Still sleep before retrying
+            await asyncio.sleep(60 * 60)  # 1 hour on error
+
+# ─── STARTUP EVENT ───────────────────────────────────────────────
+
+@app.on_event("startup")
+async def startup_event():
+    """Initialize the system on startup"""
+    try:
+        # Set up the webhook immediately on startup
+        setup_webhook_registration()
+        logger.info("Startup: Webhook setup initiated")
+        
+        # Start background task to periodically check and renew webhook
+        asyncio.create_task(renew_webhook_if_needed())
+        logger.info("Started webhook renewal background task")
+    except Exception as e:
+        logger.error(f"Error during application startup: {str(e)}")
+</file>
+
+<file path="apps/pkm-indexer/nixpacks.toml">
+[phases.setup]
+nixPkgs = ["python310", "gcc", "tesseract"]
+aptPkgs = [
+  "build-essential",
+  "libgomp1",
+  "cmake",
+  "swig",
+  "libatlas-base-dev",
+  "gfortran",
+  "libblas-dev",
+  "libeigen3-dev"
+]
+
+[phases.build]
+cmds = [
+  "pip install --upgrade pip setuptools wheel",
+  "pip install -r requirements.txt"
+]
+
+[start]
+cmd = "uvicorn main:app --host 0.0.0.0 --port $PORT"
+</file>
+
+<file path="apps/pkm-indexer/organize.py">
+# File: apps/pkm-indexer/organize.py
+import os
+import shutil
+import time
+import frontmatter
+import openai
+import re
+import json
+from pathlib import Path
+import pdfplumber
+import pytesseract
+from PIL import Image
+import requests
+from bs4 import BeautifulSoup
+
+openai.api_key = os.getenv("OPENAI_API_KEY")
+
+def infer_file_type(filename):
+    ext = Path(filename).suffix.lower()
+    if ext in [".md", ".txt"]: return "text"
+    if ext in [".pdf"]: return "pdf"
+    if ext in [".png", ".jpg", ".jpeg", ".gif", ".bmp"]: return "image"
+    if ext in [".mp3", ".wav", ".m4a"]: return "audio"
+    if ext in [".doc", ".docx"]: return "document"
+    return "other"
+
+def extract_text_from_pdf(path):
+    try:
+        with pdfplumber.open(path) as pdf:
+            text = "\n".join(page.extract_text() or "" for page in pdf.pages)
+            
+            # Check if this looks like a LinkedIn post
+            if "Profile viewers" in text[:500] or "Post impressions" in text[:500] or "linkedin.com" in text.lower():
+                return process_linkedin_pdf(text, path)
+            
+            return text
+    except Exception as e:
+        return f"[PDF extraction failed: {e}]"
+
+def process_linkedin_pdf(text, path):
+    """Process LinkedIn PDF content to extract the main post and ignore comments."""
+    try:
+        # Pattern to detect the start of comments section
+        comment_indicators = [
+            "Reactions", 
+            "Like · Reply",
+            "comments · ",
+            "reposts",
+            "Most relevant"
+        ]
+        
+        # Pattern to detect URLs in the text
+        url_pattern = r'https?://(?:[-\w.]|(?:%[\da-fA-F]{2}))+(?:/[-\w%!.~\'()*+,;=:@/&?=]*)?'
+        
+        # Find all URLs in the original content
+        main_urls = re.findall(url_pattern, text)
+        important_urls = []
+        
+        # Split content by lines to process
+        lines = text.split('\n')
+        main_content_lines = []
+        
+        # Track if we're in the comments section
+        in_comments = False
+        author_comment_section = False
+        post_author = None
+        
+        # Extract the post author if available (usually near the beginning)
+        for i, line in enumerate(lines[:15]):
+            if "• Author" in line or "• 1st" in line or "• 2nd" in line or "• 3rd" in line:
+                # The line before often contains the author name
+                if i > 0:
+                    post_author = lines[i-1].strip()
+                    break
+                    
+        # Process the content line by line
+        for i, line in enumerate(lines):
+            # Check if we've hit the comments section
+            if any(indicator in line for indicator in comment_indicators) and i > 10:
+                in_comments = True
+                continue
+                
+            # If we're still in the main content, keep the line
+            if not in_comments:
+                main_content_lines.append(line)
+                continue
+                
+            # Check for author comments (only process if we know the author)
+            if post_author and post_author in line and i+2 < len(lines) and "Author" in lines[i:i+2]:
+                author_comment_section = True
+                continue
+                
+            # Process author comment content
+            if author_comment_section:
+                # Look for URLs or other important info in first author comment
+                urls_in_comment = re.findall(url_pattern, line)
+                if urls_in_comment:
+                    important_urls.extend(urls_in_comment)
+                    
+                # Check if author comment section is ending
+                if "Like · Reply" in line or "Like · " in line:
+                    author_comment_section = False
+        
+        # Combine the main content
+        main_content = '\n'.join(main_content_lines)
+        
+        # Add any important URLs from author comments if they weren't in the main content
+        for url in important_urls:
+            if url not in main_urls and ("lnkd.in" in url or ".com" in url):  # LinkedIn short URLs are often important
+                main_content += f"\n\nAdditional URL from author comment: {url}"
+                
+        print("📱 Detected LinkedIn post, removed comments section")
+        return main_content
+    except Exception as e:
+        print(f"Error processing LinkedIn content: {e}")
+        return text  # Return original if processing fails
+
+def extract_text_from_image(path):
+    try:
+        # Open and process image
+        image = Image.open(path)
+        
+        # Try multiple preprocessing approaches
+        texts = []
+        
+        # Approach 1: Original with adjusted threshold
+        img1 = image.convert("L")
+        img1 = img1.point(lambda x: 0 if x < 120 else 255)  # Lowered threshold
+        texts.append(pytesseract.image_to_string(img1, lang="eng"))
+        
+        # Approach 2: Try Danish language if available
+        try:
+            texts.append(pytesseract.image_to_string(img1, lang="dan"))
+        except:
+            # If Danish not installed, try with English
+            pass
+        
+        # Approach 3: Try with different preprocessing
+        img3 = image.convert("L")
+        img3 = img3.resize((int(img3.width * 1.5), int(img3.height * 1.5)), Image.LANCZOS)  # Upsample
+        img3 = img3.point(lambda x: 0 if x < 150 else 255)  # Different threshold
+        
+        # Try multilingual if available
+        try:
+            texts.append(pytesseract.image_to_string(img3, lang="dan+eng"))
+        except:
+            texts.append(pytesseract.image_to_string(img3, lang="eng"))
+        
+        # Approach 4: Higher contrast for slide presentations
+        img4 = image.convert("L")
+        # Apply more aggressive contrast for presentation slides
+        img4 = img4.point(lambda x: 0 if x < 180 else 255)
+        texts.append(pytesseract.image_to_string(img4, lang="eng"))
+        
+        # Use the longest text result that isn't just garbage
+        valid_texts = [t for t in texts if len(t.strip()) > 20]
+        if valid_texts:
+            text = max(valid_texts, key=len)
+        else:
+            text = max(texts, key=len)
+        
+        # If we got nothing meaningful, report failure
+        if len(text.strip()) < 20:
+            return "[OCR produced insufficient text. Manual processing recommended.]"
+            
+        print("🖼️ OCR output:", repr(text[:500]))
+        return text
+    except Exception as e:
+        return f"[OCR failed: {e}]"
+
+def extract_urls(text):
+    """
+    Extract URLs from text, including both standard http/https URLs and potential 
+    title-based references that might be links.
+    """
+    # Standard URL pattern
+    url_pattern = r'https?://(?:[-\w.]|(?:%[\da-fA-F]{2}))+(?:/[-\w%!.~\'()*+,;=:@/&?=]*)?'
+    urls = re.findall(url_pattern, text)
+    
+    # Also look for linked text with URLs like [text](url)
+    markdown_links = re.findall(r'\[([^\]]+)\]\(([^)]+)\)', text)
+    markdown_urls = [link[1] for link in markdown_links if link[1].startswith('http')]
+    
+    # Look for potential title links in specific formats
+    potential_links = []
+    
+    # Look for titles that might be links (for PDF resources lists)
+    # Pattern: title followed by "by Author" - common in resource lists
+    title_pattern = r'(?:^|\n)(?:\d+\)|\-)\s*([^""\n]+?)(?= by | \()'
+    potential_titles = re.findall(title_pattern, text)
+    
+    # Also look for text that appears to be a clickable reference
+    # Common in PDFs with links that don't have explicit URLs
+    reference_patterns = [
+        r'([A-Z][a-z]+(?:\s[A-Z][a-z]+)*\s(?:AI|ML|for\sEveryone|Intelligence|Awareness|Machine|clone))',  # AI-related titles
+        r'(my book|my AI clone|Appendix [A-Z]|Foundry from HBS)',  # References to books, appendices, etc.
+        r'(?<=see\s)([^\.,:;\n]+)'  # Things after "see" are often references
+    ]
+    
+    for pattern in reference_patterns:
+        found = re.findall(pattern, text)
+        potential_links.extend([link.strip() for link in found if len(link.strip()) > 5])
+    
+    # Add potential titles that look like resources
+    potential_links.extend([title.strip() for title in potential_titles if len(title.strip()) > 5])
+    
+    # Remove duplicates and very common words that aren't likely to be meaningful links
+    potential_links = list(set(potential_links))
+    filtered_links = [link for link in potential_links if link.lower() not in 
+                     ['and', 'the', 'this', 'that', 'with', 'from', 'after', 'before']]
+    
+    all_urls = list(set(urls + markdown_urls))  # Remove duplicates
+    print("🔗 URLs detected:", all_urls)
+    print("🔍 Potential link titles:", filtered_links[:15])
+    
+    return all_urls, filtered_links
+
+def enrich_urls(urls, potential_titles=None):
+    enriched = []
+    metadata = {}
+    
+    # Create a mapping of potential titles to improve URL descriptions
+    title_map = {}
+    if potential_titles:
+        for title in potential_titles:
+            # Store lowercase version for case-insensitive matching
+            title_map[title.lower()] = title
+    
+    for url in urls:
+        try:
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+            }
+            r = requests.get(url, timeout=10, headers=headers)
+            soup = BeautifulSoup(r.text, "html.parser")
+            
+            # Try to get title
+            title = "(No title)"
+            if soup.title and soup.title.string:
+                title = soup.title.string.strip()
+            
+            # Try to get description
+            description = ""
+            meta_desc = soup.find('meta', attrs={'name': 'description'}) or soup.find('meta', attrs={'property': 'og:description'})
+            if meta_desc and 'content' in meta_desc.attrs:
+                description = meta_desc['content'].strip()
+                if len(description) > 150:
+                    description = description[:150] + "..."
+            
+            # Check if this URL might match a potential title we found
+            url_lower = url.lower()
+            matching_title = None
+            for potential_title_lower, original_title in title_map.items():
+                # See if any words from the potential title appear in the URL
+                words = potential_title_lower.split()
+                if any(word in url_lower for word in words if len(word) > 3):
+                    matching_title = original_title
+                    break
+            
+            # Use matching title if found
+            if matching_title and len(matching_title) > 5:
+                display_title = matching_title
+            else:
+                display_title = title
+                
+            enriched_entry = f"- [{display_title}]({url})"
+            if description:
+                enriched_entry += f"\n  *{description}*"
+                
+            enriched.append(enriched_entry)
+            
+            # Store metadata for later use
+            metadata[url] = {
+                "title": display_title,
+                "description": description[:150] if description else "",
+                "url": url
+            }
+            
+        except Exception as e:
+            enriched.append(f"- {url} (unreachable: {str(e)[:50]})")
+            metadata[url] = {
+                "title": url,
+                "description": f"Error: {str(e)[:50]}",
+                "url": url
+            }
+    
+    print("🔍 Enriched URLs block:\n", "\n".join(enriched))
+    return "\n".join(enriched), metadata
+
+def get_extract(content, file_type=None, urls_metadata=None, log_f=None, is_linkedin=False):
+    try:
+        # Check if OpenAI API key is configured
+        if not openai.api_key:
+            error_msg = "OpenAI API key not configured. Please set OPENAI_API_KEY environment variable."
+            print(f"🚫 Error: {error_msg}")
+            if log_f:
+                log_f.write(f"OpenAI ERROR: {error_msg}\n")
+            return "Missing API Key", "Extract failed: OpenAI API key not configured. Please add OPENAI_API_KEY to environment variables.", ["extraction_failed"]
+        
+        print("🧠 Content sent to GPT (preview):\n", content[:500])
+        
+        # Determine appropriate extract length based on content
+        content_length = len(content)
+        if content_length < 1000:
+            # For very short content, keep extract concise
+            extract_length = 200
+            model = "gpt-4"
+        elif content_length < 5000:
+            # For medium content, medium extract
+            extract_length = 500
+            model = "gpt-4"
+        else:
+            # For longer, complex content, allow longer extracts
+            extract_length = 2000  # Up to ~400 words for complex content
+            model = "gpt-4"  # Better for complex content
+        
+        # Check if this appears to be a resource list/links-heavy doc
+        has_resource_patterns = (
+            "resources" in content.lower() and 
+            (content.count("\n1)") > 1 or content.count("\n2)") > 1)
+        )
+        
+        # Different prompt based on content type
+        if has_resource_patterns:
+            # For resource-list style documents
+            prompt = (
+                "You are analyzing a document that appears to be a resource list with references, links, and learning materials.\n\n"
+                "Create a detailed summary that specifically includes ALL referenced resources, people, and links. "
+                "Also provide relevant tags that capture the subject matter and type of resources.\n\n"
+                "In your extract, make sure to preserve:\n"
+                "1. All resource names and titles\n"
+                "2. All author names and affiliations\n"
+                "3. All categories of resources\n"
+                "4. Any referenced websites, tools, or platforms\n\n"
+                "Respond in this JSON format:\n"
+                "{\n  \"extract_title\": \"...\",\n  \"extract_content\": \"...\",\n  \"tags\": [\"tag1\", \"tag2\"]\n}\n\n"
+                f"Content:\n{content[:5000]}"
+            )
+        elif is_linkedin:
+            prompt = (
+                "You are analyzing a LinkedIn post. Create a clear title and detailed summary that captures "
+                "the key points, insights, and any URLs/resources mentioned in the post. Ignore promotional content.\n\n"
+                "Focus on what makes this post valuable for knowledge management purposes.\n\n"
+                "Respond in this JSON format:\n"
+                "{\n  \"extract_title\": \"...\",\n  \"extract_content\": \"...\",\n  \"tags\": [\"tag1\", \"tag2\"]\n}\n\n"
+                f"LinkedIn Post Content:\n{content[:5000]}"
+            )
+        elif file_type == "image":
+            prompt = (
+                "You are analyzing text extracted from an image via OCR. The text may have errors or be incomplete.\n\n"
+                "Create a meaningful title and summary of what this image contains, plus relevant tags.\n\n"
+                "For complex content, provide a detailed summary that captures the key information.\n\n"
+                "Respond in this JSON format:\n"
+                "{\n  \"extract_title\": \"...\",\n  \"extract_content\": \"...\",\n  \"tags\": [\"tag1\", \"tag2\"]\n}\n\n"
+                f"OCR Text:\n{content[:5000]}"
+            )
+        elif urls_metadata and len(urls_metadata) > 0:
+            # Create a summary of URLs for the prompt
+            url_summary = "\n".join([f"- {data['title']}: {data['url']}" for url, data in urls_metadata.items()])
+            
+            prompt = (
+                "You are summarizing content that contains valuable URLs and references.\n\n"
+                "Create a title and detailed summary preserving key information, plus relevant tags.\n"
+                "For rich content with many references, provide a comprehensive summary.\n\n"
+                "Pay special attention to these detected URLs and resources:\n\n"
+                f"{url_summary}\n\n"
+                "Respond in this JSON format:\n"
+                "{\n  \"extract_title\": \"...\",\n  \"extract_content\": \"...\",\n  \"tags\": [\"tag1\", \"tag2\"]\n}\n\n"
+                f"Content:\n{content[:5000]}"
+            )
+        else:
+            prompt = (
+                "You are a semantic summarizer. Return a short title and a deeper thematic summary, plus relevant tags.\n\n"
+                "For complex or information-rich content, provide a detailed summary that captures the key points.\n\n"
+                "Respond in this JSON format:\n"
+                "{\n  \"extract_title\": \"...\",\n  \"extract_content\": \"...\",\n  \"tags\": [\"tag1\", \"tag2\"]\n}\n\n"
+                f"Content:\n{content[:5000]}"
+            )
+        
+        # Log the prompt for debugging
+        if log_f:
+            log_f.write(f"OpenAI Prompt: {prompt[:500]}...\n")
+        
+        # Add retries for API call reliability
+        max_retries = 3
+        retry_delay = 2  # seconds
+        
+        for attempt in range(max_retries):
+            try:
+                response = openai.ChatCompletion.create(
+                    model=model,
+                    messages=[
+                        {"role": "system", "content": "You analyze content and extract semantic meaning."},
+                        {"role": "user", "content": prompt}
+                    ],
+                    max_tokens=extract_length,  # Dynamic based on content
+                    temperature=0.7  # Balanced between creativity and accuracy
+                )
+                
+                # Process the raw response
+                raw = response["choices"][0]["message"]["content"]
+                
+                # Log the raw response for debugging
+                if log_f:
+                    log_f.write(f"OpenAI Raw Response: {raw[:500]}...\n")
+                
+                # Try to parse as JSON
+                try:
+                    parsed = json.loads(raw)
+                    
+                    # Validate the expected fields
+                    if "extract_title" not in parsed or "extract_content" not in parsed:
+                        if log_f:
+                            log_f.write(f"JSON parsing successful but missing required fields. Got: {list(parsed.keys())}\n")
+                        # Try a fallback approach - extract from raw text if possible
+                        title_match = re.search(r'"extract_title":\s*"([^"]+)"', raw)
+                        content_match = re.search(r'"extract_content":\s*"([^"]+)"', raw)
+                        tags_match = re.search(r'"tags":\s*\[(.*?)\]', raw)
+                        
+                        title = title_match.group(1) if title_match else "Extracted Title"
+                        extract = content_match.group(1) if content_match else raw
+                        
+                        if tags_match:
+                            tags_str = tags_match.group(1)
+                            tags = [tag.strip('"\'') for tag in tags_str.split(',')]
+                        else:
+                            tags = ["extracted"]
+                            
+                        return title, extract, tags
+                    
+                    # Get the extracted information
+                    title = parsed.get("extract_title", "Untitled")
+                    extract = parsed.get("extract_content", "No summary generated.")
+                    tags = parsed.get("tags", ["untagged"])
+                    
+                    # Basic validation
+                    if not title or title == "Untitled":
+                        # Try to generate a title from the first line of content
+                        first_line = content.split('\n')[0].strip()
+                        if len(first_line) > 5 and len(first_line) < 100:
+                            title = first_line
+                    
+                    # Make sure extract isn't empty
+                    if not extract or extract == "No summary." or extract == "No summary generated.":
+                        if content_length < 1000:
+                            # For short content, just use the original
+                            extract = content
+                        else:
+                            # For longer content, use the first 500 chars
+                            extract = content[:500] + "... (Extract generation failed, showing original content preview)"
+                    
+                    # Make sure we have some tags
+                    if not tags or tags == ["untagged"]:
+                        # Generate some basic tags from content
+                        if "AI" in content:
+                            tags.append("AI")
+                        if "book" in content.lower() or "publication" in content.lower():
+                            tags.append("Reading")
+                        if "research" in content.lower():
+                            tags.append("Research")
+                        if file_type:
+                            tags.append(file_type.capitalize())
+                    
+                    return title, extract, tags
+                    
+                except json.JSONDecodeError as json_err:
+                    if log_f:
+                        log_f.write(f"JSON parsing error: {str(json_err)}\nRaw text: {raw[:500]}...\n")
+                    
+                    # Attempt to extract meaningful content from non-JSON response
+                    lines = raw.split('\n')
+                    title = "Untitled"
+                    for line in lines:
+                        if "title" in line.lower() and ":" in line:
+                            title = line.split(":", 1)[1].strip().strip('"\'')
+                            break
+                    
+                    # Just use the raw output as the extract
+                    extract = raw
+                    
+                    # Generate basic tags
+                    tags = []
+                    for line in lines:
+                        if "tags" in line.lower() and ":" in line:
+                            tags_part = line.split(":", 1)[1].strip()
+                            tags = [t.strip().strip('",[]') for t in tags_part.split(",")]
+                            break
+                    
+                    if not tags:
+                        tags = ["extracted"]
+                        if file_type:
+                            tags.append(file_type.capitalize())
+                    
+                    return title, extract, tags
+                
+            except Exception as api_error:
+                if attempt < max_retries - 1:
+                    print(f"🔄 OpenAI API error, retrying ({attempt+1}/{max_retries}): {str(api_error)}")
+                    if log_f:
+                        log_f.write(f"OpenAI API error, retrying: {str(api_error)}\n")
+                    time.sleep(retry_delay * (2 ** attempt))  # Exponential backoff
+                else:
+                    # Last attempt failed, raise the error to be caught by outer try-except
+                    raise api_error
+        
+        # If we got here, all retries failed
+        raise Exception("All OpenAI API retries failed")
+        
+    except Exception as e:
+        if log_f:
+            log_f.write(f"OpenAI ERROR: {e}\n")
+        print(f"🚫 Error in get_extract: {e}")
+        
+        # Provide a more meaningful extract with the error
+        error_title = "Extraction Failed"
+        error_extract = f"The AI extraction process encountered an error: {str(e)}\n\nContent preview:\n{content[:300]}..."
+        
+        # Generate tags based on available information
+        fallback_tags = ["extraction_failed"]
+        if file_type:
+            fallback_tags.append(file_type.capitalize())
+        
+        return error_title, error_extract, fallback_tags
+
+def organize_files():
+    inbox = "pkm/Inbox"
+    meta_out = "pkm/Processed/Metadata"
+    source_out = "pkm/Processed/Sources"
+    logs = "pkm/Logs"
+
+    # Create a detailed log of this run
+    os.makedirs(inbox, exist_ok=True)
+    os.makedirs(meta_out, exist_ok=True)
+    os.makedirs(source_out, exist_ok=True)
+    os.makedirs(logs, exist_ok=True)
+
+    log_file_path = os.path.join(logs, f"log_organize_{int(time.time())}.md")
+    
+    # Return value to indicate success
+    success_count = 0
+    failed_files = []
+    
+    with open(log_file_path, "a", encoding="utf-8") as log_f:
+        log_f.write(f"# Organize run at {time.time()}\n\n")
+        log_f.write(f"OpenAI API Key status: {bool(openai.api_key)}\n\n")
+
+        files = [f for f in os.listdir(inbox) if os.path.isfile(os.path.join(inbox, f))]
+        log_f.write(f"Found files in Inbox: {files}\n")
+
+        for filename in files:
+            try:
+                log_f.write(f"\n\n## Processing {filename}\n")
+                input_path = os.path.join(inbox, filename)
+                file_type = infer_file_type(filename)
+
+                log_f.write(f"- File type detected: {file_type}\n")
+                
+                # Check for reprocessing notes
+                reprocess_notes_filename = f"{os.path.splitext(filename)[0]}_reprocess_notes.txt"
+                reprocess_notes_path = os.path.join(inbox, reprocess_notes_filename)
+                reprocess_notes = None
+                
+                if os.path.exists(reprocess_notes_path):
+                    with open(reprocess_notes_path, "r", encoding="utf-8") as f:
+                        reprocess_notes = f.read().strip()
+                    log_f.write(f"- Found reprocessing notes: {reprocess_notes[:100]}...\n")
+                
+                # Extract text based on file type
+                if file_type == "pdf":
+                    text_content = extract_text_from_pdf(input_path)
+                    extraction_method = "pdfplumber"
+                    
+                    # Check if this is a LinkedIn post
+                    is_linkedin = "linkedin.com" in text_content.lower() or "Profile viewers" in text_content[:500]
+                elif file_type == "image":
+                    text_content = extract_text_from_image(input_path)
+                    extraction_method = "ocr"
+                    is_linkedin = False
+                else:
+                    with open(input_path, "rb") as f:
+                        raw_bytes = f.read()
+                    try:
+                        text_content = raw_bytes.decode("utf-8")
+                        extraction_method = "decode"
+                    except UnicodeDecodeError:
+                        text_content = raw_bytes.decode("latin-1")
+                        extraction_method = "decode"
+                    is_linkedin = False
+
+                log_f.write(f"- Extraction method: {extraction_method}\n")
+                log_f.write(f"- Text content length: {len(text_content)} characters\n")
+                log_f.write(f"- Preview:\n```\n{text_content[:500]}\n```\n")
+
+                # Enhanced URL processing
+                urls, potential_titles = extract_urls(text_content)
+                log_f.write(f"- Detected URLs: {urls}\n")
+                log_f.write(f"- Potential titles: {potential_titles[:5]}\n")
+                
+                # For resource lists, store the list of references in metadata
+                if file_type == "pdf" and ("resources" in text_content.lower() or text_content.count("\n1)") > 1):
+                    has_resource_patterns = True
+                    log_f.write(f"- Detected resource list pattern\n")
+                else:
+                    has_resource_patterns = False
+                
+                urls_metadata = {}
+                
+                # Special handling for resource lists - add potential titles as "reference links"
+                if file_type == "pdf" and ("resources" in text_content.lower() or text_content.count("\n1)") > 1):
+                    if len(potential_titles) > 3:  # If we found several potential resource titles
+                        log_f.write(f"- Detected resource list with {len(potential_titles)} potential references\n")
+                        
+                        # Store reference metadata
+                        for title in potential_titles:
+                            urls_metadata[title] = {
+                                "title": title,
+                                "description": "Referenced resource",
+                                "url": f"reference:{title}"  # Use a special prefix to indicate this isn't a real URL
+                            }
+                
+                if urls:
+                    enriched, url_data = enrich_urls(urls, potential_titles)
+                    # Update the metadata with real URL data
+                    urls_metadata.update(url_data)
+                    
+                    # Add the enriched URLs to a separate section
+                    url_section = "\n\n---\n\n## Referenced Links\n" + enriched
+                    log_f.write(f"- Added enriched URL section\n")
+
+                base_name = Path(filename).stem
+                today = time.strftime("%Y-%m-%d")
+                md_filename = f"{today}_{base_name}.md"
+                log_f.write(f"- Output metadata filename: {md_filename}\n")
+
+                # Get extract from GPT
+                log_f.write(f"- Generating extract via OpenAI API\n")
+                try:
+                    # If there are reprocessing notes, include them in the log
+                    if reprocess_notes:
+                        log_f.write(f"- Using reprocessing notes: {reprocess_notes}\n")
+                    
+                    # Call OpenAI API with a higher timeout
+                    title, extract, tags = get_extract(text_content, file_type, urls_metadata, log_f, is_linkedin)
+                    log_f.write(f"- Extract generated successfully\n")
+                    log_f.write(f"- Title: {title}\n")
+                    log_f.write(f"- Tags: {tags}\n")
+                    log_f.write(f"- Extract length: {len(extract)} characters\n")
+                except Exception as extract_error:
+                    log_f.write(f"- ❌ Extract generation failed: {str(extract_error)}\n")
+                    title = "Extraction Failed: " + base_name
+                    extract = f"Failed to generate extract: {str(extract_error)}\n\nContent preview:\n{text_content[:500]}..."
+                    tags = ["extraction_failed", "needs_review"]
+
+                # Default category based on file type
+                if is_linkedin:
+                    category = "LinkedIn Post"
+                else:
+                    category = "Reference" if file_type == "pdf" else "Image" if file_type == "image" else "Note"
+                
+                # Try to improve tags when we have little information
+                if tags == ["uncategorized"] or tags == ["untagged"]:
+                    if file_type == "pdf" and "AI" in text_content:
+                        tags = ["AI", "Document", "Reference"]
+                    elif file_type == "image" and extraction_method == "ocr":
+                        tags = ["Image", "Slide", "Presentation"]
+
+                metadata = {
+                    "title": title,
+                    "date": today,
+                    "file_type": file_type,
+                    "source": filename,
+                    "source_url": None,
+                    "tags": tags,
+                    "category": category,
+                    "author": "Unknown",
+                    "extract_title": title,
+                    "extract_content": extract,
+                    "reviewed": False,
+                    "parse_status": "success",
+                    "extraction_method": extraction_method,
+                    "reprocess_status": "none",
+                    "reprocess_rounds": "0"
+                }
+                
+                # Add reprocessing notes if they exist
+                if reprocess_notes:
+                    metadata["reprocess_notes"] = reprocess_notes
+                
+                # Store URL information if relevant
+                if urls:
+                    metadata["referenced_urls"] = urls
+                    # Store url titles in a more accessible format
+                    url_titles = {}
+                    for url, data in urls_metadata.items():
+                        url_titles[url] = data.get("title", "Unknown")
+                    metadata["url_titles"] = url_titles
+                    metadata["url_section"] = url_section
+                
+                # For resource lists, store the list of references in metadata
+                if has_resource_patterns and len(potential_titles) > 3:
+                    metadata["referenced_resources"] = potential_titles
+                
+                # For short documents, keep the full content regardless of file type
+                # This applies to all file types where we've extracted text
+                keep_full_content = (
+                    len(text_content) < 10000 or  # Any text under 10K chars
+                    len(urls) > 0                 # Any content with URLs
+                )
+                
+                log_f.write(f"- Keeping full content: {keep_full_content}\n")
+                
+                # Create the frontmatter post
+                post = frontmatter.Post(
+                    content=text_content if keep_full_content else "[Content omitted]",
+                    **metadata
+                )
+
+                # Save the metadata file
+                meta_path = os.path.join(meta_out, md_filename)
+                log_f.write(f"- Writing metadata to: {meta_path}\n")
+                
+                try:
+                    with open(meta_path, "w", encoding="utf-8") as f:
+                        f.write(frontmatter.dumps(post))
+                    log_f.write(f"- ✅ Metadata file written successfully\n")
+                except Exception as write_error:
+                    log_f.write(f"- ❌ Failed to write metadata file: {str(write_error)}\n")
+                    failed_files.append((filename, f"Failed to write metadata: {str(write_error)}"))
+                    continue
+
+                # Move the original file to appropriate source directory
+                dest_dir = os.path.join(source_out, file_type)
+                os.makedirs(dest_dir, exist_ok=True)
+                dest_path = os.path.join(dest_dir, filename)
+                
+                log_f.write(f"- Moving original file to: {dest_path}\n")
+                try:
+                    shutil.move(input_path, dest_path)
+                    log_f.write(f"- ✅ Original file moved successfully\n")
+                    
+                    # Also remove reprocessing notes file if it exists
+                    if os.path.exists(reprocess_notes_path):
+                        os.remove(reprocess_notes_path)
+                        log_f.write(f"- ✅ Removed reprocessing notes file\n")
+                except Exception as move_error:
+                    log_f.write(f"- ❌ Failed to move original file: {str(move_error)}\n")
+                    # If we can't move the file but we've created the metadata, 
+                    # count it as a partial success
+                    if os.path.exists(meta_path):
+                        log_f.write(f"- ⚠️ Metadata created but original file not moved\n")
+                    else:
+                        failed_files.append((filename, f"Failed to move file: {str(move_error)}"))
+                        continue
+
+                log_f.write(f"✅ File {filename} processed successfully\n")
+                success_count += 1
+
+            except Exception as e:
+                log_f.write(f"❌ Error processing {filename}: {str(e)}\n")
+                print(f"❌ ERROR in organize_files(): {e}")
+                failed_files.append((filename, str(e)))
+                continue
+
+    print(f"🏁 organize_files() complete. Processed {success_count} files successfully. Failed: {len(failed_files)}")
+    
+    # Return a summary of what happened
+    return {
+        "success_count": success_count,
+        "failed_files": failed_files,
+        "log_file": log_file_path
+    }
+
+if __name__ == "__main__":
+    organize_files()
+</file>
+
+<file path="apps/pkm-indexer/requirements.txt">
+# File: apps/pkm-indexer/requirements.txt
+fastapi==0.111.0
+uvicorn==0.29.0
+wsgidav==4.3.3
+pdfplumber==0.11.0
+
+langchain==0.2.0
+langchain-community==0.2.0
+langchain-text-splitters==0.2.0
+sentence-transformers==2.2.2
+faiss-cpu==1.7.4
+
+openai==0.27.8
+python-frontmatter==1.0.0
+apscheduler==3.10.4
+PyYAML>=5.3
+torch==1.13.1+cpu
+--extra-index-url https://download.pytorch.org/whl/cpu
+numpy==1.23.5
+python-multipart==0.0.9
+unstructured
+
+# ✅ Required for Google Drive Integration
+google-auth
+google-auth-oauthlib
+google-auth-httplib2
+google-api-python-client
+
+pytesseract
+Pillow
+requests
+beautifulsoup4
+</file>
+
+<file path="docs/PKM-System-Overview.md">
+# Personal Knowledge Management (PKM) System — Overview (last updated: 2025-05-20 06:45 CET)
+
+---
+
+## **Purpose**
+
+The PKM system is designed to help a non-coder manage personal knowledge across Windows PC and iOS (iPhone, Apple Watch) using a Progressive Web App (PWA). It enables capture, organization, review, and querying of diverse data types—notes, PDFs, URLs, videos, audio, and more—using AI for metadata generation and semantic search.
+
+The system automatically ingests files from `~/GoogleDrive/PKM/Inbox`, which can be populated via:
+
+* iOS Drafts app
+* Manual file uploads
+* Email Shortcuts (Phase 2)
+
+All data is transformed into structured markdown metadata records containing AI-enriched extracts (semantic summaries), tags, and references to the original source files. Text content is included only when appropriate. The system is simple, extensible, and will be voice-enabled (in Phase 2).
+
+---
+
+## **System Architecture**
+
+![System Architecture Diagram]
+
+### **Data Flow**
+
+1. Files are added to Google Drive PKM/Inbox folder
+2. Webhook notification triggers backend processing
+3. Files are downloaded to local inbox
+4. OpenAI processes files to generate metadata
+5. Metadata and original files are uploaded to separate folders
+6. Files are indexed for semantic search
+7. Frontend displays files for review and querying
+
+### **Component Overview**
+
+#### **Backend (pkm-indexer)**
+
+* **Stack**: Python (FastAPI), `frontmatter`, `openai`, `faiss`, Google Drive API
+* **Deployment**: Railway — `pkm-indexer-production.up.railway.app`
+* **Core Responsibilities**:
+  * Monitor/sync files from Google Drive Inbox via webhooks
+  * Generate rich metadata extracts using OpenAI
+  * Extract and summarize content from PDFs, audio, images, URLs, and markdown
+  * Store structured `.md` metadata files with frontmatter and optional content
+  * Serve metadata extracts via API and enable approval/review
+  * Index extracts and metadata fields into FAISS for retrieval
+
+* **Key Modules**:
+  * `main.py`: API endpoints, webhook handling, and Google Drive integration
+  * `organize.py`: Processes files, generates AI extracts, injects metadata
+  * `index.py`: Indexes extracts and metadata
+
+* **File Structure**:
+  * `Inbox/` — where downloaded files land from Google Drive
+  * `Processed/`
+    * `Metadata/` — YAML frontmatter `.md` records (extracts, tags, source refs)
+    * `Sources/` — original files, organized by type (PDFs, images, audio, etc.)
+  * `Logs/` — detailed logs of all operations
+  * `Archive/` — optional long-term storage for previously handled files
+
+#### **Frontend (pkm-app)**
+
+* **Stack**: Next.js PWA, React, Axios
+* **Deployment**: Railway — `pkm-app-production.up.railway.app`
+* **Core Responsibilities**:
+  * Review metadata extracts in staging
+  * Edit and approve titles, tags, categories, extracts
+  * Provide access to logs and system status
+  * Search indexed extracts via semantic search
+
+* **Key Components**:
+  * `index.js`: Query/search interface and system status
+  * `staging.js`: File review queue
+  * `StagingTable.js`: Metadata editor with Save and Reprocess options
+
+---
+
+## **Metadata Schema**
+
+All processed files generate a metadata record with the following fields:
+
+| Field | Type | Description | Required |
+|-------|------|-------------|----------|
+| title | string | Document title | Yes |
+| date | string | Processing date (YYYY-MM-DD) | Yes |
+| file_type | string | Original file type (pdf, image, text, etc.) | Yes |
+| source | string | Original filename | Yes |
+| source_url | string/null | URL if applicable | No |
+| tags | array | Topic-related tags | Yes |
+| category | string | Document category | Yes |
+| author | string | Content author | No |
+| extract_title | string | AI-generated title | Yes |
+| extract_content | string | AI-generated summary | Yes |
+| reviewed | boolean | Whether file has been approved | Yes |
+| parse_status | string | Processing status | Yes |
+| extraction_method | string | Method used to extract content | Yes |
+| reprocess_status | string | Status of reprocessing (none, requested, in_progress, complete, failed) | Yes |
+| reprocess_rounds | string | Number of reprocessing attempts | Yes |
+| reprocess_notes | string | User instructions for reprocessing | No |
+| processing_profile | string | AI processing profile used | No |
+| referenced_urls | array | URLs found in the content | No |
+| referenced_resources | array | Resources referenced in content | No |
+
+---
+
+## **API Endpoints**
+
+### **Core Endpoints**
+
+| Endpoint | Method | Description | Parameters |
+|----------|--------|-------------|------------|
+| `/staging` | GET | Get files in staging area for review | None |
+| `/approve` | POST | Approve or reprocess a file | `file` object with metadata |
+| `/sync-drive` | POST | Sync files from Google Drive | None |
+| `/search` | POST | Search the knowledge base | `query` string |
+| `/trigger-organize` | POST | Process files in local inbox | None |
+| `/webhook/status` | GET | Check webhook status | None |
+| `/file-stats` | GET | Get file and system statistics | None |
+| `/logs` | GET | List available log files | None |
+| `/logs/{log_file}` | GET | Get content of specific log | `log_file` string |
+| `/upload/{folder}` | POST | Upload file to specified folder | `filename`, `content` (base64) |
+
+### **Google Drive Endpoints**
+
+| Endpoint | Method | Description | Parameters |
+|----------|--------|-------------|------------|
+| `/drive-webhook` | POST | Handle Google Drive change notifications | None |
+| `/auth/initiate` | GET | Initiate OAuth flow for Google Drive | None |
+| `/oauth/callback` | GET | OAuth callback handler | `code` query param |
+
+---
+
+## **Development Environment Setup**
+
+### **Prerequisites**
+- Node.js 16+ for frontend development
+- Python 3.10+ for backend development
+- Google Cloud account with Drive API enabled
+- OpenAI API key
+- Railway.app account for deployment
+
+### **Local Development Setup**
+1. Clone the repository: `git clone https://github.com/eastfarm/pkm-system.git`
+2. Set up backend:
+   ```bash
+   cd apps/pkm-indexer
+   pip install -r requirements.txt
+   # Create a .env file with the following variables:
+   # OPENAI_API_KEY=your_key_here
+   # GOOGLE_TOKEN_JSON=your_json_here
+   # WEBHOOK_URL=your_webhook_url
+   uvicorn main:app --reload
+   ```
+3. Set up frontend:
+   ```bash
+   cd apps/pkm-app
+   npm install
+   npm run dev
+   ```
+
+### **Testing Environment**
+- The system uses manual testing on the Railway.app deployment
+- Frontend: https://pkm-app-production.up.railway.app
+- Backend: https://pkm-indexer-production.up.railway.app
+
+---
+
+## **Current Status and Roadmap**
+
+### **Completed Features (May 2025)**
+- ✅ Complete backend implementation with FastAPI
+- ✅ Complete frontend implementation with Next.js
+- ✅ Google Drive webhook integration for real-time file processing
+- ✅ AI-powered metadata extraction for various file types
+- ✅ Comprehensive logging system
+- ✅ Semantic search functionality
+- ✅ Save and Reprocess workflow for metadata editing
+
+### **In Progress**
+- 🔄 Improving AI extraction reliability and error handling
+- 🔄 Fixing metadata display issues in the staging UI
+- 🔄 Enhancing reprocessing workflow for failed extractions
+
+### **Next Milestones (June 2025)**
+1. Implement thematic taxonomy beyond simple tags
+2. Add multi-modal processing improvements for images and audio
+3. Develop email integration for direct capture
+4. Create dashboard for system monitoring
+
+### **Future Expansion (Q3 2025)**
+1. Voice-enabled commands and control
+2. Integration with additional storage providers
+3. Mobile-optimized UI enhancements
+4. AI-assisted content organization recommendations
+
+---
+
+## **Known Issues and Troubleshooting**
+
+### **Common Issues**
+1. **Missing Extracts**: If extracts are not being generated, check:
+   - OPENAI_API_KEY environment variable is set correctly
+   - OpenAI API has not reached its rate limit
+   - The file content is readable and not corrupted
+
+2. **Google Drive Sync Issues**:
+   - Webhook registration may fail if the WEBHOOK_URL is not publicly accessible
+   - Ensure GOOGLE_TOKEN_JSON contains valid OAuth credentials
+   - Check logs in `pkm/Logs/` for detailed error messages
+
+3. **Frontend Build Errors**:
+   - JavaScript files must use `//` comments, not `#` comments
+   - Ensure Next.js compatibility with Link components
+
+### **Debugging Tools**
+- Backend logs accessible at `/logs` endpoint
+- System status displayed on the frontend homepage
+- Railway.app provides deployment logs for debugging
+
+---
+
+## **Code Patterns and Conventions**
+
+### **File Organization**
+- Backend Python files follow the single-responsibility principle
+- Frontend components are organized by feature
+- Logs and data files are stored in a structured folder hierarchy
+
+### **Naming Conventions**
+- Python: snake_case for functions and variables, PascalCase for classes
+- JavaScript: camelCase for variables and functions, PascalCase for components
+- Files: descriptive names with hyphens for multi-word filenames
+
+### **Error Handling**
+- Backend errors are logged to timestamped files in pkm/Logs/
+- Critical errors send meaningful responses to the frontend
+- Frontend displays user-friendly error messages
+
+### **State Management**
+- Frontend uses React useState and useEffect for local component state
+- Backend maintains a webhook state object for tracking Google Drive integration
+
+---
+
+## **Integration Details**
+
+### **Google Drive Integration**
+- Authentication uses OAuth 2.0 flow
+- Webhook notifications trigger real-time processing
+- File hierarchy mirrors the local PKM structure
+- Credentials are stored in Railway environment variables
+
+### **OpenAI Integration**
+- Uses GPT-4 for complex content, optimizes for smaller content
+- Extracts use structured prompting with JSON output format
+- Error handling includes retries and fallbacks
+- API key management via environment variable
+
+### **Future Integrations**
+- Email capture will use IMAP/POP3 protocols
+- Voice integration will leverage OpenAI Whisper API
+- Additional cloud providers will use standardized adapter pattern
+
+---
+
+## **Multi-Modal Processing Pipeline**
+
+The system supports different strategies for different file types:
+
+* **Notes & Text**: Captured and summarized with tags
+* **PDFs**: Analyzed for structure, key points extracted with AI
+* **Images**: OCR-processed to extract readable text
+* **URLs**: Detected and enriched using requests and BeautifulSoup
+* **Audio**: Preprocessed (transcription planned for Phase 2)
+
+---
+
+## **Required Environment Variables**
+
+| Variable | Purpose | Format | Required |
+|----------|---------|--------|----------|
+| OPENAI_API_KEY | Authenticates with OpenAI API | String | Yes |
+| GOOGLE_TOKEN_JSON | Google Drive OAuth credentials | JSON String | Yes |
+| WEBHOOK_URL | URL for Google Drive webhooks | String | Yes |
+| PORT | Web server port | Number | No (defaults to 8000) |
+
+---
+
+## **Deployment Guide**
+
+### **Railway.app Deployment**
+1. Fork the repository to your GitHub account
+2. Connect your Railway account to GitHub
+3. Create two new Railway projects:
+   - pkm-indexer
+   - pkm-app
+4. Set the following environment variables for pkm-indexer:
+   - OPENAI_API_KEY
+   - GOOGLE_TOKEN_JSON (base64-encoded OAuth credentials)
+   - WEBHOOK_URL (set to your Railway deployment URL + "/drive-webhook")
+5. Deploy both services from your GitHub repository
+6. Configure the Railway domain for CORS (if needed)
+
+---
+
+## **Recent Enhancements**
+
+### **1. Google Drive Real-time Integration**
+
+* Implemented webhook-based monitoring of the PKM/Inbox folder
+* Files are processed immediately when added to Google Drive (no manual intervention needed)
+* The integration includes automatic renewal of webhooks and comprehensive error handling
+* Detailed logs are created for all operations, making troubleshooting easier
+
+### **2. Enhanced Logging System**
+
+* All operations (file discovery, download, processing, upload) are now extensively logged
+* Log files are created for each sync operation with timestamp-based naming
+* Logs are accessible via the UI for easy troubleshooting
+* Error conditions are clearly indicated with detailed information
+
+### **3. Improved Error Handling**
+
+* The system now handles errors gracefully at each step of the process
+* Error details are captured in the logs for easier diagnosis
+* The UI shows clear information about sync status and issues
+
+### **4. Deployment Optimizations**
+
+* Railway.app deployment has been optimized for reliable operation
+* Background tasks ensure webhook registration stays active
+* Startup processes automatically set up necessary folders and integrations
+
+### **5. Extract Title and Content Separation**
+
+* The extract is now split into `extract_title` and `extract_content`
+* `extract_title` can be inferred by the AI or taken from document content if clearly present
+* `extract_content` captures the semantic core of the file
+
+### **6. Approval Workflow: Save vs Reprocess**
+
+* Metadata schema includes:
+  * `reprocess_status`: `none`, `requested`, `in_progress`, `complete`
+  * `reprocess_rounds`: count of times a file has been reprocessed
+  * `reprocess_notes`: optional user instructions for improving analysis or clarifying intent
+  * `processing_profile`: preset applied by system or selected by user
+
+* Replaced the "Approve" model with **Save** and **Reprocess** options.
+
+---
+
+## **Glossary**
+
+- **Extract**: An AI-generated summary of a file's content that captures its semantic meaning
+- **Frontmatter**: YAML metadata at the beginning of markdown files
+- **Metadata**: Structured information about a file, including title, tags, and extracts
+- **PKM**: Personal Knowledge Management
+- **Reprocessing**: The process of regenerating AI extracts with different parameters
+- **Staging Area**: UI for reviewing and approving processed files before they enter the knowledge base
+- **Webhook**: HTTP callback that notifies the system when files change in Google Drive
+
+---
+
+## **Research-Grade Extraction Prompt**
+
+```text
+You are an expert literary analyst with exceptional comprehension and synthesis abilities. Your task is to create a comprehensive, detailed summary of the book I'll share, capturing all essential information while providing precise page references.
+
+Follow this analytical framework:
+
+1. First, examine the book's structure and organization to understand its framework
+- Identify major sections, chapters, and logical divisions
+- Note how information flows and connects throughout the text
+
+2. Systematically identify and extract:
+- Central arguments and key claims (with exact page references)
+- Critical evidence supporting each major point
+- Important data, statistics, and research findings
+- Essential frameworks, models, or methodologies
+- Notable quotes that capture core concepts
+
+3. Step by step, analyze the relationships between concepts by:
+- Mapping how ideas build upon each other
+- Identifying cause-effect relationships
+- Noting comparative analyses or contrasting viewpoints
+- Recognizing progression of arguments or narrative development
+
+4. Create a comprehensive summary that:
+- Maintains the book's logical structure
+- Includes ALL key information with exact page references
+- Preserves complex nuances and sophisticated reasoning
+- Captures both explicit statements and implicit conclusions
+- Retains critical examples that illustrate main concepts
+
+Format your summary with:
+- Clear hierarchical organization matching the book's structure
+- Bullet points for discrete information with page numbers in parentheses (p.XX)
+- Short paragraphs for connected concepts with inline page citations
+- Special sections for methodologies, frameworks, or models
+- Brief concluding synthesis of the book's most essential contributions
+
+Remember:
+- Prioritize depth and comprehensiveness over brevity
+- Include ALL significant information, not just highlights
+- Reference specific pages for every important point
+- Preserve the author's original reasoning process
+- Think step by step through the entire content before summarizing
+```
+</file>
+
+<file path=".gitignore">
+# Global
+.DS_Store
+Thumbs.db
+*.log
+
+# Node / Frontend
+node_modules/
+.next/
+out/
+npm-debug.log
+yarn-error.log
+
+# Python / Backend
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.venv/
+env/
+*.egg-info/
+dist/
+build/
+
+# Environment
+.env
+.env.*
+*.env
+
+# App-specific artifacts
+apps/pkm-indexer/pkm/
+apps/pkm-indexer/pkm_index/
+
+# FAISS index cache
+*.faiss
+
+# Misc
+*.cache
+coverage/
+</file>
+
+<file path="LICENSE">
+MIT License
+
+Copyright (c) 2025 Paul Ostergaard
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+</file>
+
+<file path="README.md">
+# PKM System
+
+This repository contains a complete AI-powered personal knowledge management system built as a monorepo with separate frontend and backend applications.
+
+---
+
+## 🧠 Overview
+
+The PKM System allows users to capture, organize, review, and query their personal notes, documents, and media — with AI-enriched metadata, semantic search, and a structured review process.
+
+See [`docs/PKM-System-Overview.md`](docs/PKM-System-Overview.md) for full system architecture and roadmap.
+
+---
+
+## 📁 Structure
+
+```
+
+pkm-system/
+├── apps/
+│   ├── pkm-app/         # Frontend (Next.js)
+│   └── pkm-indexer/     # Backend (FastAPI)
+├── docs/
+│   └── PKM-System-Overview\.md
+├── README.md
+└── .gitignore
+
+````
+
+---
+
+## 🖥 Apps
+
+### 📦 `pkm-indexer` (FastAPI)
+
+- Handles file intake, metadata generation, indexing (FAISS), and review routing.
+- Sync OpenAI API used in MVP (LangChain planned).
+- Deployed to Railway at [`pkm-indexer-production.up.railway.app`](https://pkm-indexer-production.up.railway.app)
+
+### 🌐 `pkm-app` (Next.js)
+
+- Progressive Web App to review, approve, and query content.
+- Supports file upload and AI-powered search.
+- Deployed to Railway at [`pkm-app-production.up.railway.app`](https://pkm-app-production.up.railway.app)
+
+---
+
+## 🚀 Getting Started
+
+Clone and run each app independently:
+
+```bash
+cd apps/pkm-indexer
+pip install -r requirements.txt
+uvicorn main:app --reload
+
+cd apps/pkm-app
+npm install
+npm run dev
+````
+
+---
+
+## 🛣️ Roadmap
+
+* [x] Basic upload, organize, review, and search loop
+* [x] Frontend metadata editor
+* [x] FAISS indexing on startup
+* [ ] LangChain chains for metadata and search
+* [ ] OneDrive sync
+* [ ] Voice commands and transcription
+</file>
+
+</files>
