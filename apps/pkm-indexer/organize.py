@@ -12,8 +12,10 @@ import pytesseract
 from PIL import Image
 import requests
 from bs4 import BeautifulSoup
+import logging # Add logging import if not already there
 
 openai.api_key = os.getenv("OPENAI_API_KEY")
+logger = logging.getLogger(__name__) # Or use your existing logger
 
 def infer_file_type(filename):
     ext = Path(filename).suffix.lower()
@@ -672,27 +674,10 @@ def organize_files(input_folder="inbox", output_folder="assets", metadata_folder
             continue
         
         try:
-            # Extract file name and determine type
             file_name = os.path.basename(input_path)
             file_type = infer_file_type(file_name)
-            
-            # Skip certain file types
-            if file_type == 'other':
-                print(f"Skipping unsupported file type: {file_name}")
-                # Move to a rejected folder instead of deleting
-                rejected_folder = os.path.join(output_folder, "rejected")
-                os.makedirs(rejected_folder, exist_ok=True)
-                rejected_path = os.path.join(rejected_folder, file_name)
-                shutil.move(input_path, rejected_path)
-                continue
-            
-            # Create source type directory if needed
-            source_type_dir = os.path.join(output_folder, "sources", file_type + "s")
-            os.makedirs(source_type_dir, exist_ok=True)
-            
-            # Generate a destination path
-            output_path = os.path.join(source_type_dir, file_name)
-            
+            logger.info(f"Processing file: {file_name}, Inferred type: {file_type}") # DEBUG LOG
+
             # If a file with the same name exists, add a timestamp to make it unique
             if os.path.exists(output_path):
                 name, ext = os.path.splitext(file_name)
@@ -701,47 +686,55 @@ def organize_files(input_folder="inbox", output_folder="assets", metadata_folder
                 output_path = os.path.join(source_type_dir, file_name)
             
             # Extract text content based on file type
+            text_content = None
+            extraction_method = "unknown"
+            is_linkedin = False
+
+            logger.info(f"Dispatching based on file_type: '{file_type}' for file: {file_name}") # DEBUG LOG
             if file_type == "pdf":
                 text_content = extract_text_from_pdf(input_path)
                 extraction_method = "pdfplumber"
-                
-                # Check if this is a LinkedIn post
-                is_linkedin = "linkedin.com" in text_content.lower() or "Profile viewers" in text_content[:500]
+                if text_content: # Check if text_content is not None or empty
+                    is_linkedin = "linkedin.com" in text_content.lower() or "Profile viewers" in text_content[:500]
             elif file_type == "image":
                 text_content = extract_text_from_image(input_path)
                 extraction_method = "ocr"
-                is_linkedin = False
-            elif file_type == "document":
+            elif file_type == "document": # This should be hit for .docx
                 text_content = extract_text_from_docx(input_path)
                 extraction_method = "docx"
-                is_linkedin = False
+                logger.info(f"Used extract_text_from_docx. Resulting text_content (first 50 chars): {str(text_content)[:50]}") # DEBUG LOG
             elif file_type == "presentation":
                 text_content = extract_text_from_pptx(input_path)
                 extraction_method = "pptx"
-                is_linkedin = False
             elif file_type == "spreadsheet":
                 text_content = extract_text_from_xlsx(input_path)
                 extraction_method = "xlsx"
-                is_linkedin = False
             elif file_type == "rtf":
                 text_content = extract_text_from_rtf(input_path)
                 extraction_method = "rtf"
-                is_linkedin = False
-            elif file_type == "text" and input_path.lower().endswith(".md"):
-                text_content = extract_text_from_markdown(input_path)
-                extraction_method = "markdown"
-                is_linkedin = False
+            elif file_type == "text" and input_path.lower().endswith((".md", ".txt")): # Ensure .txt also uses this if desired, or separate
+                # For .md, you might want extract_text_from_markdown if it does more than just read
+                # For .txt, reading directly is fine
+                if input_path.lower().endswith(".md"):
+                    text_content = extract_text_from_markdown(input_path) # Assuming this exists and is preferred for .md
+                    extraction_method = "markdown"
+                else: # Handle .txt
+                    with open(input_path, "r", encoding="utf-8", errors="ignore") as f:
+                        text_content = f.read()
+                    extraction_method = "textread"
             else:
+                logger.warning(f"File type '{file_type}' for {file_name} not handled by specific extractors, falling back to decode.") # DEBUG LOG
                 with open(input_path, "rb") as f:
                     raw_bytes = f.read()
                 try:
                     text_content = raw_bytes.decode("utf-8")
-                    extraction_method = "decode"
+                    extraction_method = "decode_utf8"
                 except UnicodeDecodeError:
-                    text_content = raw_bytes.decode("latin-1")
-                    extraction_method = "decode"
-                is_linkedin = False
-                
+                    text_content = raw_bytes.decode("latin-1", errors="ignore")
+                    extraction_method = "decode_latin1"
+            
+            logger.info(f"File: {file_name}, Extraction method: {extraction_method}") # DEBUG LOG
+
             # Prepare metadata
             content_preview = text_content[:2000] if text_content else ""
             
@@ -767,10 +760,20 @@ def organize_files(input_folder="inbox", output_folder="assets", metadata_folder
                     )
                     
                     # Parse OpenAI response
-                    ai_response = completion.choices[0].message.content.strip()
-                    
-                    # Check if response looks like JSON
-                    if ai_response.startswith('{') and ai_response.endswith('}'):
+                    # ADD ROBUST CHECKS HERE:
+                    ai_response_content = None
+                    if completion and completion.choices and len(completion.choices) > 0:
+                        choice = completion.choices[0]
+                        if choice and choice.message:
+                            ai_response_content = choice.message.content
+                        else:
+                            logger.error(f"OpenAI choice or message is None for {file_name}. Choice: {choice}")
+                    else:
+                        logger.error(f"OpenAI completion.choices is None or empty for {file_name}. Completion: {completion}")
+
+                    if ai_response_content:
+                        ai_response = ai_response_content.strip()
+                        # ... (rest of your JSON parsing)
                         try:
                             metadata_dict = json.loads(ai_response)
                             # Add additional metadata fields
@@ -813,10 +816,10 @@ def organize_files(input_folder="inbox", output_folder="assets", metadata_folder
                             # Use basic metadata instead
                             basic_metadata(input_path, output_path, metadata_path, file_name, file_type, text_content, extraction_method)
                     else:
-                        # Handle non-JSON response
-                        print(f"Non-JSON response for {file_name}")
-                        # Use basic metadata instead
-                        basic_metadata(input_path, output_path, metadata_path, file_name, file_type, text_content, extraction_method)
+                        # Handle case where ai_response_content is None (OpenAI call failed to produce usable content)
+                        logger.error(f"No valid content from OpenAI for {file_name}.")
+                        basic_metadata(input_path, output_path, metadata_path, file_name, file_type, text_content or "", extraction_method)
+                        continue # Skip to next file
                 except Exception as e:
                     print(f"Error generating metadata for {file_name}: {str(e)}")
                     # Use basic metadata instead
@@ -827,7 +830,7 @@ def organize_files(input_folder="inbox", output_folder="assets", metadata_folder
                 basic_metadata(input_path, output_path, metadata_path, file_name, file_type, text_content, extraction_method)
                 
         except Exception as e:
-            print(f"Error processing {input_path}: {str(e)}")
+            logger.error(f"Error processing {input_path} in organize_files: {str(e)}", exc_info=True) # Add exc_info for traceback
             # Move to error folder
             error_folder = os.path.join(output_folder, "errors")
             os.makedirs(error_folder, exist_ok=True)
