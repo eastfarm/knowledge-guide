@@ -19,8 +19,13 @@ torch==1.13.1+cpu
 numpy==1.23.5
 python-multipart==0.0.9
 unstructured
+// filepath: c:\Users\Paul\OneDrive\Documents\GitHub\knowledge-guide\apps\pkm-indexer\requirements.txt
+# ...existing code...
+numpy==1.23.5
+python-multipart==0.0.9
+unstructured[md]
 
-# ✅ Required for Google Drive Integration
+
 google-auth
 google-auth-oauthlib
 google-auth-httplib2
