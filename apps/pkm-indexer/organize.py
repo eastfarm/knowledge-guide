@@ -839,8 +839,7 @@ def organize_files(input_folder="inbox", output_folder="assets", metadata_folder
                 basic_metadata(input_path, output_path, metadata_path, file_name, file_type, text_content, extraction_method)
                 
         except Exception as e:
-            logger.error(f"Error processing {input_path} in organize_files: {str(e)}", exc_info=True) # Add exc_info for traceback
-            # Move to error folder
+            logger.error(f"Error processing {input_path} in organize_files: {str(e)}", exc_info=True) # Add exc_info for traceback            # Move to error folder
             error_folder = os.path.join(output_folder, "errors")
             os.makedirs(error_folder, exist_ok=True)
             error_path = os.path.join(error_folder, os.path.basename(input_path))
@@ -851,6 +850,12 @@ def organize_files(input_folder="inbox", output_folder="assets", metadata_folder
                 os.remove(input_path)
     
     print("File organization complete")
+    
+    # Return success and failure metrics
+    return {
+        "success_count": len(inbox_files) - len([f for f in os.listdir(output_folder) if f.endswith(".error")]),
+        "failed_files": [(os.path.basename(f), "Processing failed") for f in os.listdir(output_folder) if f.endswith(".error")]
+    }
     
 def basic_metadata(input_path, output_path, metadata_path, file_name, file_type, text_content, extraction_method):
     """Creates basic metadata when OpenAI processing fails"""

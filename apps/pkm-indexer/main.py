@@ -490,10 +490,19 @@ def sync_drive():
             try:
                 log_f.write("\n## Processing files with organize_files()\n\n")
                 organize_result = organize_files()
-                log_f.write(f"✅ organize_files() processed {organize_result['success_count']} files successfully\n")
-                if organize_result['failed_files']:
-                    log_f.write(f"⚠️ {len(organize_result['failed_files'])} files failed processing:\n")
-                    for failed_file, error in organize_result['failed_files']:
+                
+                # Check if organize_result is None or not a dictionary
+                if not organize_result or not isinstance(organize_result, dict):
+                    log_f.write("⚠️ organize_files() returned no result data\n")
+                    organize_result = {
+                        "success_count": 0,
+                        "failed_files": []
+                    }
+                
+                log_f.write(f"✅ organize_files() processed {organize_result.get('success_count', 0)} files successfully\n")
+                if organize_result.get('failed_files', []):
+                    log_f.write(f"⚠️ {len(organize_result.get('failed_files', []))} files failed processing:\n")
+                    for failed_file, error in organize_result.get('failed_files', []):
                         log_f.write(f"  - {failed_file}: {error}\n")
             except Exception as organize_error:
                 log_f.write(f"❌ Organization error: {str(organize_error)}\n")
