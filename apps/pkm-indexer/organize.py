@@ -18,7 +18,7 @@ openai.api_key = os.getenv("OPENAI_API_KEY")
 logger = logging.getLogger(__name__) # Or use your existing logger
 
 def infer_file_type(filename):
-    ext = Path(filename).suffix.lower()
+    ext = Path(filename).suffix.lower().strip() # Added .strip()
     if ext in [".md", ".txt"]: return "text"
     if ext in [".pdf"]: return "pdf"
     if ext in [".png", ".jpg", ".jpeg", ".gif", ".bmp"]: return "image"
@@ -79,7 +79,7 @@ def extract_text_from_pptx(path):
                     slide_text.append(shape.text)
             
             if len(slide_text) > 1:  # Only add slides with actual content
-                full_text.append("\n".join(slide_text))
+                full_text.append("\n\n".join(slide_text))
         
         return "\n\n".join(full_text)
     except Exception as e:
@@ -102,7 +102,7 @@ def extract_text_from_xlsx(path):
                     sheet_text.append(row_text)
             
             if len(sheet_text) > 1:  # Only add sheets with actual content
-                full_text.append("\n".join(sheet_text))
+                full_text.append("\n\n".join(sheet_text))
         
         return "\n\n".join(full_text)
     except Exception as e:
@@ -677,6 +677,14 @@ def organize_files(input_folder="inbox", output_folder="assets", metadata_folder
             file_name = os.path.basename(input_path)
             file_type = infer_file_type(file_name)
             logger.info(f"Processing file: {file_name}, Inferred type: {file_type}") # DEBUG LOG
+
+            # Define source_type_dir based on file_type or a default
+            # This was missing and causing an error.
+            # Assuming output_folder is the base for source types.
+            source_type_dir = os.path.join(output_folder, file_type if file_type != "other" else "sources")
+            os.makedirs(source_type_dir, exist_ok=True) # Ensure the directory exists
+
+            output_path = os.path.join(source_type_dir, file_name) # Now output_path is defined correctly before potential modification
 
             # If a file with the same name exists, add a timestamp to make it unique
             if os.path.exists(output_path):
