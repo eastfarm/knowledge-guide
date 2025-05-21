@@ -247,17 +247,19 @@ export default function Home() {
               </Link>
             </li>
             <li style={{ margin: '10px 0' }}>
-              <a href={`${API_URL}/logs`} target="_blank" rel="noopener noreferrer" style={{ 
-                display: 'block',
-                padding: '12px', 
-                backgroundColor: '#f0f0f0', 
-                borderRadius: '4px',
-                color: '#333',
-                textDecoration: 'none',
-                fontWeight: 'bold'
-              }}>
-                📋 View Processing Logs
-              </a>
+              <Link href="/logs">
+                <a style={{ 
+                  display: 'block',
+                  padding: '12px', 
+                  backgroundColor: '#f0f0f0', 
+                  borderRadius: '4px',
+                  color: '#333',
+                  textDecoration: 'none',
+                  fontWeight: 'bold'
+                }}>
+                  📋 View Processing Logs
+                </a>
+              </Link>
             </li>
           </ul>
           
