@@ -770,14 +770,14 @@ def organize_files(input_folder="inbox", output_folder="assets", metadata_folder
                     # Parse OpenAI response
                     # ADD ROBUST CHECKS HERE:
                     ai_response_content = None
-                    if completion and completion.choices and len(completion.choices) > 0:
+                    if completion and hasattr(completion, 'choices') and isinstance(completion.choices, list) and len(completion.choices) > 0:
                         choice = completion.choices[0]
-                        if choice and choice.message:
+                        if choice and hasattr(choice, 'message') and choice.message and hasattr(choice.message, 'content'):
                             ai_response_content = choice.message.content
                         else:
-                            logger.error(f"OpenAI choice or message is None for {file_name}. Choice: {choice}")
+                            logger.error(f"OpenAI response 'choice', 'message' or 'content' is invalid for {file_name}. Choice: {choice}, Message: {getattr(choice, 'message', 'N/A')}")
                     else:
-                        logger.error(f"OpenAI completion.choices is None or empty for {file_name}. Completion: {completion}")
+                        logger.error(f"OpenAI response 'completion.choices' is not a non-empty list for {file_name}. Choices type: {type(getattr(completion, 'choices', None))}, Choices: {getattr(completion, 'choices', 'N/A')}")
 
                     if ai_response_content:
                         ai_response = ai_response_content.strip()
@@ -809,7 +809,8 @@ def organize_files(input_folder="inbox", output_folder="assets", metadata_folder
                                     metadata_dict["tags"].append("linkedin")
                                 
                             # Create post with frontmatter
-                            post = frontmatter.Post(text_content, **metadata_dict)
+                            current_text_content = text_content if text_content is not None else ""
+                            post = frontmatter.Post(current_text_content, **metadata_dict)
                             
                             with open(metadata_path, 'wb') as f:
                                 frontmatter.dump(post, f)
