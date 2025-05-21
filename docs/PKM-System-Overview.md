@@ -52,12 +52,13 @@ All data is transformed into structured markdown metadata records containing AI-
   * `index.py`: Indexes extracts and metadata
 
 * **File Structure**:
-  * `Inbox/` — where downloaded files land from Google Drive
-  * `Processed/`
-    * `Metadata/` — YAML frontmatter `.md` records (extracts, tags, source refs)
-    * `Sources/` — original files, organized by type (PDFs, images, audio, etc.)
-  * `Logs/` — detailed logs of all operations
-  * `Archive/` — optional long-term storage for previously handled files
+  (Note: The `pkm-indexer` application creates the following directories at runtime, prefixed with `pkm/` (e.g., `pkm/Inbox/`, `pkm/Logs/`). When the application is deployed on Railway.app (its primary operational environment), these directories exist **"locally" within the Railway.app server environment where `pkm-indexer` executes**. They are temporary working directories for the application, distinct from the persistent storage folders on Google Drive, and are not part of the committed repository structure. For example, on Railway, a log path might resolve to something like `/app/apps/pkm-indexer/pkm/Logs/`. During local development on a personal computer, these directories would be created on that machine, e.g., `c:\\\\Users\\\\Paul\\\\OneDrive\\\\Documents\\\\GitHub\\\\knowledge-guide\\\\apps\\\\pkm-indexer\\\\pkm\\\\Logs\\\\`.)
+  * `pkm/Inbox/` — Runtime directory for files downloaded from Google Drive.
+  * `pkm/Processed/`
+    * `Metadata/` — Runtime directory for YAML frontmatter `.md` records (extracts, tags, source refs).
+    * `Sources/` — Runtime directory for original files, organized by type (PDFs, images, audio, etc.).
+  * `pkm/Logs/` — Runtime directory for detailed logs of all operations.
+  * `pkm/Archive/` — Optional runtime directory for long-term storage for previously handled files
 
 #### **Frontend (pkm-app)**
 
@@ -207,7 +208,7 @@ All processed files generate a metadata record with the following fields:
 2. **Google Drive Sync Issues**:
    - Webhook registration may fail if the WEBHOOK_URL is not publicly accessible
    - Ensure GOOGLE_TOKEN_JSON contains valid OAuth credentials
-   - Check logs in `pkm/Logs/` for detailed error messages
+   - Check logs in `pkm/Logs/` (runtime directory, e.g., `apps/pkm-indexer/pkm/Logs/`) for detailed error messages
 
 3. **Frontend Build Errors**:
    - JavaScript files must use `//` comments, not `#` comments
@@ -233,7 +234,7 @@ All processed files generate a metadata record with the following fields:
 - Files: descriptive names with hyphens for multi-word filenames
 
 ### **Error Handling**
-- Backend errors are logged to timestamped files in pkm/Logs/
+- Backend errors are logged to timestamped files in `pkm/Logs/` (runtime directory, e.g., `apps/pkm-indexer/pkm/Logs/`).
 - Critical errors send meaningful responses to the frontend
 - Frontend displays user-friendly error messages
 
@@ -407,3 +408,118 @@ Remember:
 - Preserve the author's original reasoning process
 - Think step by step through the entire content before summarizing
 ```
+
+---
+
+## **File Processing and Reprocessing Workflow**
+
+This section details the end-to-end lifecycle of a file from ingestion to its availability in the knowledge base, including how it's processed, reviewed, and reprocessed if necessary.
+
+### I. File Ingestion and Initial Processing (`pkm-indexer`)
+
+**Primary Python Modules:** `main.py` (controls synchronization and orchestration), `organize.py` (handles individual file processing, extraction, and AI enrichment).
+
+**A. Synchronization from Google Drive (`main.py:sync_drive`)**
+1.  **Connection:** Establishes a connection to the user's Google Drive account.
+2.  **Folder Structure Verification:** Ensures the necessary folder structure (`PKM/Inbox`, `PKM/Processed/Metadata`, `PKM/Processed/Sources`) exists, creating them if not.
+3.  **Download New Files:** Downloads any new files found in the `PKM/Inbox` Google Drive folder to a temporary local `pkm/Inbox` directory within the `pkm-indexer` service's runtime environment.
+
+**B. Individual File Processing (`organize.py:organize_files` calling `process_file_content`)**
+For each file downloaded to the local `pkm/Inbox`:
+1.  **File Type Inference (`infer_file_type`):** The file type (e.g., PDF, TXT, DOCX, PNG, JPG) is determined based on its extension.
+2.  **Raw Text Extraction:** Content is extracted based on file type:
+    *   **PDFs:** `pdfplumber` library is used. A special function (`process_linkedin_pdf`) attempts to isolate the main post content from comments and extraneous elements in LinkedIn PDFs.
+    *   **Images (PNG, JPG, etc.):** Optical Character Recognition (OCR) is performed using `pytesseract`.
+    *   **Microsoft Office (DOCX, PPTX, XLSX):** Text is extracted using relevant Python libraries (e.g., `python-docx`, `python-pptx`, `openpyxl`).
+    *   **Markdown/Text:** Raw content is read directly.
+    *   Extraction failures are noted, and an error message may be included in the extracted text itself.
+3.  **URL Extraction (`extract_urls`):** Standard `http(s)://` links and Markdown-style links (`[text](url)`) are identified within the extracted text.
+4.  **URL Enrichment (`enrich_urls`):** For each discovered URL, the system attempts to fetch the webpage's title and meta description to provide more context.
+5.  **Initial Metadata Generation (`process_file_content`):** A JSON object is created to store the file's metadata. This includes:
+    *   `filename`: Original name of the file.
+    *   `file_type`: Inferred file type.
+    *   `extraction_method`: Tool/library used for text extraction (e.g., `pdfplumber`, `ocr`).
+    *   `raw_text`: The full extracted text content.
+    *   `urls`: A list of found URLs.
+    *   `enriched_urls_block`: A formatted string containing URLs with their fetched titles and descriptions.
+    *   **`parse_status` Determination (Critical Step):**
+        *   If the `OPENAI_API_KEY` environment variable is missing or invalid at this stage, `parse_status` is set to `"basic"` (or a similar status like `"extraction_failed"`). AI processing is skipped, and an error tag/message is typically added to the metadata.
+        *   If the API key is valid, the system proceeds to AI enrichment.
+6.  **OpenAI Enrichment (`get_extract`):**
+    *   This step is performed if the OpenAI API key is valid and `parse_status` indicates readiness for AI processing.
+    *   A tailored prompt is constructed based on the file type, content length, extracted text, and any `reprocess_notes` (if the file is undergoing reprocessing).
+    *   A call is made to OpenAI's ChatCompletion API (e.g., `gpt-4` or `gpt-3.5-turbo-16k`) to generate:
+        *   `extract_title`: A concise, AI-generated title for the content.
+        *   `extract_content`: A thematic summary or a more detailed extraction of key information.
+        *   `tags`: A list of relevant keywords or tags.
+    *   If the OpenAI call is successful and returns valid JSON, these fields are added to the metadata, and `parse_status` is updated to `"full_ai"` (or a similar success status).
+    *   Errors during the OpenAI call (e.g., API errors, rate limits, invalid JSON response) are handled. `parse_status` might be set to reflect the error (e.g., `"basic_plus_gpt_error"`), and an `error_message` is added to the metadata.
+7.  **Local Persistence:**
+    *   The complete metadata (now a JSON object) is saved to a file in the `pkm-indexer`'s local `pkm/Processed/Metadata` directory. The metadata filename typically corresponds to the original file (e.g., `original_filename.pdf.json`).
+    *   The original source file is moved from the local `pkm/Inbox` to the local `pkm/Processed/Sources` directory.
+
+**C. Upload to Google Drive (`main.py:sync_drive`)**
+1.  The newly created/updated metadata `.json` files are uploaded from the local `pkm/Processed/Metadata` directory to the `PKM/Processed/Metadata` folder on Google Drive.
+2.  The original source files (which were moved locally) are uploaded from the local `pkm/Processed/Sources` directory to the `PKM/Processed/Sources` folder on Google Drive.
+3.  Successfully processed files (originals) are deleted from the `PKM/Inbox` folder on Google Drive to prevent re-processing.
+
+### II. Staging, Review, and Approval (`pkm-app` Frontend & `pkm-indexer` Backend)
+
+**Components:** `pkm-app/pages/staging.js` (frontend page), `pkm-app/components/StagingTable.js` (frontend component), `pkm-indexer/main.py` (backend API endpoints `/staging` and `/approve`).
+
+**A. Fetching Files for Staging (Frontend Initiated)**
+1.  The user navigates to the "Review Staging Files" page in the `pkm-app`.
+2.  The frontend (`staging.js`) makes an API call to the `/staging` endpoint of the `pkm-indexer` service.
+
+**B. `/staging` API Endpoint (Backend Logic - `pkm-indexer/main.py:get_staging_files`)**
+1.  The `pkm-indexer` reads all `.json` metadata files currently present in its local `pkm/Processed/Metadata` directory (these files are kept in sync with Google Drive).
+2.  It filters these files to identify those considered "pending review." The criteria typically include:
+    *   The metadata does *not* contain `reviewed: true` (or the `reviewed` field is absent).
+    *   The `reprocess_status` is not `approved` or `completed` (exact conditions might vary slightly based on implementation details).
+3.  A list of these pending files (including their full metadata and potentially a reference to their original content for display) is returned to the frontend.
+
+**C. Display and User Interaction (Frontend - `StagingTable.js`)**
+1.  The files received from the `/staging` endpoint are rendered in a table.
+2.  The user can review and edit metadata fields such as `title`, `category`, `tags`, and `extract_content`.
+3.  The user can also add `reprocess_notes` if they intend to send the file for reprocessing by the AI.
+4.  **"Save" Action:**
+    *   The frontend updates its local copy of the file's metadata with any user changes.
+    *   It typically sets `reviewed: true` and `reprocess_status: "none"` (or clears the reprocess status).
+    *   The entire updated metadata object for the file is sent via a POST request to the `/approve` API endpoint on the `pkm-indexer`.
+5.  **"Reprocess" Action:**
+    *   The frontend updates its local copy of the file's metadata.
+    *   It sets `reprocess_status: "requested"`.
+    *   It may increment a `reprocess_rounds` counter in the metadata.
+    *   Any `reprocess_notes` entered by the user are included.
+    *   The entire updated metadata object is sent via a POST request to the `/approve` API endpoint.
+
+**D. `/approve` API Endpoint (Backend Logic - `pkm-indexer/main.py:approve_file`)**
+1.  The `pkm-indexer` receives the updated metadata object from the frontend.
+2.  It overwrites the corresponding `.json` metadata file in its local `pkm/Processed/Metadata` directory with the new data.
+3.  This change to the local metadata file is then automatically synchronized back to the `PKM/Processed/Metadata` folder on Google Drive by the `sync_drive` process during its next scheduled run or if triggered by a file watcher (if implemented).
+
+### III. Reprocessing Loop (`pkm-indexer` and Google Drive Integration)
+
+**Trigger:** A file's metadata (either updated via the `/approve` endpoint with "Reprocess" or manually edited on Google Drive) contains the flag `reprocess_status: "requested"`.
+
+**A. Detection by `pkm-indexer` (`organize.py:organize_files` and `process_file_content`)**
+1.  During its regular scan of local metadata files (which are synced from Google Drive), the `organize_files` function checks the `reprocess_status` field of each metadata object.
+
+**B. Initiating Reprocessing**
+1.  If `reprocess_status` is found to be `"requested"`:
+    *   The system logs that a reprocessing attempt is being made, often including any `reprocess_notes` found in the metadata.
+    *   It may clear or reset previously AI-generated fields (like `extract_title`, `extract_content`, `tags`) and `parse_status` to ensure a fresh analysis. For instance, `parse_status` might be temporarily set to `"reprocessing"`.
+    *   The `get_extract` function (responsible for OpenAI calls) is invoked again. The crucial difference is that any `reprocess_notes` from the metadata are passed to `get_extract` and can be incorporated into the prompt sent to OpenAI, guiding the AI's new analysis.
+
+**C. OpenAI Enrichment (Repeated)**
+1.  As described in section I.B.6, the file's raw text (and potentially the `reprocess_notes`) is sent to OpenAI for a new round of analysis, title generation, summarization, and tagging.
+
+**D. Metadata Update Post-Reprocessing**
+1.  The metadata JSON object is updated with the new AI-generated `extract_title`, `extract_content`, and `tags`.
+2.  `parse_status` is updated to reflect the outcome of the reprocessing attempt (e.g., `"full_ai"` if successful).
+3.  `reprocess_status` is changed to `"completed"` (or a similar status indicating the request has been handled).
+4.  A timestamp, such as `reprocess_last_attempt`, might be recorded.
+
+**E. Persistence and Return to Staging**
+1.  The updated metadata file is saved locally by the `pkm-indexer` and subsequently synced back to the `PKM/Processed/Metadata` folder on Google Drive.
+2.  If the reprocessing was successful and the `reviewed` flag in the metadata is still `false` (or absent), the file should reappear in the "Review Staging Files" page of the `pkm-app`. This time, it will display its newly AI-enriched metadata, ready for the user's final review and approval via the "Save" action. If "Save" is clicked, `reviewed` becomes `true`, and it will no longer appear in staging unless flagged for reprocessing again.

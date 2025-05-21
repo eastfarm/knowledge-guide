@@ -388,25 +388,24 @@ def enrich_urls(urls, potential_titles=None):
                 "url": url
             }
     
-    print("🔍 Enriched URLs block:\n", "\n".join(enriched))
-    return "\n".join(enriched), metadata
+    print("🔍 Enriched URLs block:\\n", "\\n".join(enriched))
+    return "\\n".join(enriched), metadata
 
-def get_extract(content, file_type=None, urls_metadata=None, log_f=None, is_linkedin=False):
+def get_extract(content, file_type=None, urls_metadata=None, log_f=None, is_linkedin=False, source_filename_for_logging="UnknownFile"): # Added source_filename_for_logging
+    logger.info(f"Enter get_extract for '{source_filename_for_logging}', file_type: {file_type}, is_linkedin: {is_linkedin}")
     try:
         # Check if OpenAI API key is configured
         api_key = os.getenv("OPENAI_API_KEY")
         if not api_key or not api_key.strip():
             error_msg = "OpenAI API key not configured. Please set OPENAI_API_KEY environment variable."
-            print(f"🚫 Error: {error_msg}")
-            logger.error(f"OpenAI API key is missing or invalid: '{api_key}'")
-            if log_f:
-                log_f.write(f"OpenAI ERROR: {error_msg}\n")
+            logger.error(f"OpenAI API key is missing or invalid for '{source_filename_for_logging}'. Key: '{api_key}'") # MODIFIED
+            # Removed log_f usage
             return "Missing API Key", "Extract failed: OpenAI API key not configured. Please add OPENAI_API_KEY to environment variables.", ["extraction_failed"]
         
         # Make sure the API key is set in openai module
         openai.api_key = api_key
         
-        print("🧠 Content sent to GPT (preview):\n", content[:500])
+        logger.debug(f"Content sent to GPT for '{source_filename_for_logging}' (preview): {content[:500]}") # MODIFIED from print
         
         # Determine appropriate extract length based on content
         content_length = len(content)
@@ -487,8 +486,8 @@ def get_extract(content, file_type=None, urls_metadata=None, log_f=None, is_link
             )
         
         # Log the prompt for debugging
-        if log_f:
-            log_f.write(f"OpenAI Prompt: {prompt[:500]}...\n")
+        # MODIFIED: Replaced log_f with logger
+        logger.debug(f"OpenAI Prompt for '{source_filename_for_logging}' (preview): {prompt[:500]}...")
         
         # Add retries for API call reliability
         max_retries = 3
@@ -496,6 +495,7 @@ def get_extract(content, file_type=None, urls_metadata=None, log_f=None, is_link
         
         for attempt in range(max_retries):
             try:
+                logger.info(f"Attempting OpenAI call ({attempt+1}/{max_retries}) for '{source_filename_for_logging}' with model {model}") # MODIFIED New Log
                 response = openai.ChatCompletion.create(
                     model=model,
                     messages=[
@@ -510,17 +510,18 @@ def get_extract(content, file_type=None, urls_metadata=None, log_f=None, is_link
                 raw = response["choices"][0]["message"]["content"]
                 
                 # Log the raw response for debugging
-                if log_f:
-                    log_f.write(f"OpenAI Raw Response: {raw[:500]}...\n")
+                # MODIFIED: Replaced log_f with logger
+                logger.debug(f"OpenAI Raw Response for '{source_filename_for_logging}' (preview): {raw[:500]}...")
                 
                 # Try to parse as JSON
                 try:
                     parsed = json.loads(raw)
+                    logger.info(f"Successfully parsed OpenAI JSON response for '{source_filename_for_logging}'") # MODIFIED New Log
                     
                     # Validate the expected fields
                     if "extract_title" not in parsed or "extract_content" not in parsed:
-                        if log_f:
-                            log_f.write(f"JSON parsing successful but missing required fields. Got: {list(parsed.keys())}\n")
+                        # MODIFIED: Replaced log_f with logger
+                        logger.warning(f"JSON parsing successful for '{source_filename_for_logging}' but missing required fields. Got: {list(parsed.keys())}")
                         # Try a fallback approach - extract from raw text if possible
                         title_match = re.search(r'"extract_title":\s*"([^"]+)"', raw)
                         content_match = re.search(r'"extract_content":\s*"([^"]+)"', raw)
@@ -541,6 +542,7 @@ def get_extract(content, file_type=None, urls_metadata=None, log_f=None, is_link
                     title = parsed.get("extract_title", "Untitled")
                     extract = parsed.get("extract_content", "No summary generated.")
                     tags = parsed.get("tags", ["untagged"])
+                    logger.info(f"Extracted data for '{source_filename_for_logging}' - Title: '{title}', Tags: {tags}") # MODIFIED New Log
                     
                     # Basic validation
                     if not title or title == "Untitled":
@@ -573,8 +575,8 @@ def get_extract(content, file_type=None, urls_metadata=None, log_f=None, is_link
                     return title, extract, tags
                     
                 except json.JSONDecodeError as json_err:
-                    if log_f:
-                        log_f.write(f"JSON parsing error: {str(json_err)}\nRaw text: {raw[:500]}...\n")
+                    # MODIFIED: Replaced log_f with logger
+                    logger.warning(f"JSON parsing error for '{source_filename_for_logging}': {str(json_err)}. Raw text (preview): {raw[:500]}...")
                     
                     # Attempt to extract meaningful content from non-JSON response
                     lines = raw.split('\n')
@@ -603,22 +605,24 @@ def get_extract(content, file_type=None, urls_metadata=None, log_f=None, is_link
                     return title, extract, tags
                 
             except Exception as api_error:
+                # MODIFIED: Replaced log_f with logger, enhanced log
+                logger.error(f"OpenAI API error on attempt {attempt+1} for '{source_filename_for_logging}': {str(api_error)}")
                 if attempt < max_retries - 1:
-                    print(f"🔄 OpenAI API error, retrying ({attempt+1}/{max_retries}): {str(api_error)}")
-                    if log_f:
-                        log_f.write(f"OpenAI API error, retrying: {str(api_error)}\n")
+                    # MODIFIED: Removed log_f
                     time.sleep(retry_delay * (2 ** attempt))  # Exponential backoff
                 else:
                     # Last attempt failed, raise the error to be caught by outer try-except
                     raise api_error
         
         # If we got here, all retries failed
-        raise Exception("All OpenAI API retries failed")
+        # MODIFIED: Added filename
+        raise Exception(f"All OpenAI API retries failed for '{source_filename_for_logging}'")
         
     except Exception as e:
-        if log_f:
-            log_f.write(f"OpenAI ERROR: {e}\n")
-        print(f"🚫 Error in get_extract: {e}")
+        # MODIFIED: Replaced log_f with logger, added exc_info=True
+        logger.error(f"Error in get_extract for '{source_filename_for_logging}': {str(e)}", exc_info=True)
+        # Removed log_f usage
+        # MODIFIED: Removed print statement
         
         # Provide a more meaningful extract with the error
         error_title = "Extraction Failed"
@@ -826,21 +830,21 @@ def organize_files(input_folder="inbox", output_folder="assets", metadata_folder
                             print(f"Organized: {file_name} -> {output_path}")
                         except json.JSONDecodeError:
                             # Handle non-JSON response
-                            print(f"Non-JSON response for {file_name}")
+                            logger.warning(f"Non-JSON response from OpenAI for {file_name}. Falling back to basic_metadata.") # MODIFIED from print
                             # Use basic metadata instead
                             basic_metadata(input_path, output_path, metadata_path, file_name, file_type, text_content, extraction_method)
                     else:
                         # Handle case where ai_response_content is None (OpenAI call failed to produce usable content)
-                        logger.error(f"No valid content from OpenAI for {file_name}.")
+                        logger.error(f"No valid content from OpenAI for {file_name}. Falling back to basic_metadata.") # MODIFIED
                         basic_metadata(input_path, output_path, metadata_path, file_name, file_type, text_content or "", extraction_method)
                         continue # Skip to next file
                 except Exception as e:
-                    print(f"Error generating metadata for {file_name}: {str(e)}")
+                    logger.error(f"Error generating metadata for {file_name}: {str(e)}. Falling back to basic_metadata.") # MODIFIED from print
                     # Use basic metadata instead
                     basic_metadata(input_path, output_path, metadata_path, file_name, file_type, text_content, extraction_method)
             else:
                 # No content extracted, use basic metadata
-                print(f"No content extracted from {file_name}")
+                logger.info(f"No content extracted from {file_name}. Using basic_metadata.") # MODIFIED from print
                 basic_metadata(input_path, output_path, metadata_path, file_name, file_type, text_content, extraction_method)
                 
         except Exception as e:
@@ -872,7 +876,7 @@ def organize_files(input_folder="inbox", output_folder="assets", metadata_folder
     }
     
 def basic_metadata(input_path, output_path, metadata_path, file_name, file_type, text_content, extraction_method):
-    """Creates basic metadata when OpenAI processing fails"""
+    logger.warning(f"Executing basic_metadata for file '{file_name}' due to previous error or lack of content. Extraction method: {extraction_method}") # New Log
     today = time.strftime("%Y-%m-%d")
     
     # Ensure text_content is a string for safe operations
