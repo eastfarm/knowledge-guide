@@ -756,95 +756,126 @@ def organize_files(input_folder="inbox", output_folder="assets", metadata_folder
             content_preview = text_content[:2000] if text_content else ""
             
             # Generate safe filename for metadata
-            metadata_filename = re.sub(r'[^\w\-_\. ]', '_', file_name)
+            metadata_filename = re.sub(r'[^\\w\\-_\\. ]', '_', file_name)
             metadata_path = os.path.join(metadata_folder, f"{os.path.splitext(metadata_filename)[0]}.md")
             
-            # Generate response type
-            response_type = "extract"
-            if is_linkedin:
-                response_type = "linkedin_post"
+            # No longer need response_type here as get_extract handles different content types
+            # response_type = "extract"
+            # if is_linkedin:
+            #     response_type = "linkedin_post"
             
-            # Generate metadata using OpenAI
+            # Generate metadata using OpenAI via get_extract
             today = time.strftime("%Y-%m-%d")
-            if text_content and len(text_content.strip()) > 0:
-                try:
-                    completion = openai.ChatCompletion.create(
-                        model=openai_model,
-                        messages=[
-                            {"role": "system", "content": f"You are an AI that extracts metadata from documents. The response should be a JSON object with the following fields: title (a concise title for the document), author (the author of the document or 'Unknown'), date (the publication date in YYYY-MM-DD format or '{today}' if unknown), category (one of: Article, Book, Note, Report, Social Media, Website, Email, Other), tags (an array of 2-5 relevant keywords/topics), extract_title (a specific title or headline from the content), extract_content (a 2-3 paragraph extract of the most important or interesting content). The response should be a markdown frontmatter style data."},
-                            {"role": "user", "content": f"Extract metadata from this {response_type}. The file is called '{file_name}'.\n\nContent preview:\n{content_preview}"}
-                        ]
-                    )
-                    
-                    # Parse OpenAI response
-                    # ADD ROBUST CHECKS HERE:
-                    ai_response_content = None
-                    if completion and hasattr(completion, 'choices') and isinstance(completion.choices, list) and len(completion.choices) > 0:
-                        choice = completion.choices[0]
-                        if choice and hasattr(choice, 'message') and choice.message and hasattr(choice.message, 'content'):
-                            ai_response_content = choice.message.content
-                        else:
-                            logger.error(f"OpenAI response 'choice', 'message' or 'content' is invalid for {file_name}. Choice: {choice}, Message: {getattr(choice, 'message', 'N/A')}")
-                    else:
-                        logger.error(f"OpenAI response 'completion.choices' is not a non-empty list for {file_name}. Choices type: {type(getattr(completion, 'choices', None))}, Choices: {getattr(completion, 'choices', 'N/A')}")
 
-                    if ai_response_content:
-                        ai_response = ai_response_content.strip()
-                        # ... (rest of your JSON parsing)
-                        try:
-                            metadata_dict = json.loads(ai_response)
-                            # Add additional metadata fields
-                            metadata_dict["parse_status"] = "success"
-                            metadata_dict["extraction_method"] = extraction_method
-                            metadata_dict["file_type"] = file_type
-                            metadata_dict["source"] = file_name
-                            metadata_dict["reviewed"] = False
-                            metadata_dict["reprocess_status"] = "none"
-                            metadata_dict["reprocess_rounds"] = "0"
-                            metadata_dict["source_url"] = None
+            if text_content and len(text_content.strip()) > 0:
+                logger.info(f"Attempting AI enrichment (get_extract) for {file_name}")
+                try:
+                    # get_extract returns: title_from_ai, summary_from_ai, tags_from_ai
+                    returned_title, returned_summary, returned_tags = get_extract(
+                        text_content,
+                        file_type=file_type,
+                        urls_metadata=None, # TODO: Consider populating urls_metadata if enrich_urls is called prior
+                        is_linkedin=is_linkedin,
+                        source_filename_for_logging=file_name
+                    )
+
+                    # Check if get_extract provided a valid, non-error summary
+                    if returned_summary and \
+                       "Extract failed" not in returned_summary and \
+                       "Missing API Key" not in returned_summary and \
+                       "No summary" not in returned_summary and \
+                       len(returned_summary.strip()) > 10: # Basic check for meaningful summary
+                        
+                        logger.info(f"Successfully received AI-generated content from get_extract for {file_name}")
+                        
+                        metadata_dict = {
+                            "title": returned_title if returned_title else f"AI Processed: {file_name}",
+                            "author": "Unknown",
+                            "date": today,
+                            "category": "Other", # Can be refined by AI or later review
+                            "tags": returned_tags if returned_tags else ["processed"],
+                            "extract_content": returned_summary,  # AI-generated summary
+                            "parse_status": "enriched",
+                            "extraction_method": extraction_method,
+                            "file_type": file_type,
+                            "source": file_name,
+                            "reviewed": False,
+                            "reprocess_status": "none",
+                            "reprocess_rounds": "0",
+                            "source_url": None
+                        }
+                        
+                        if not isinstance(metadata_dict.get("tags"), list):
+                            tags_val = metadata_dict.get("tags")
+                            metadata_dict["tags"] = [str(tags_val)] if tags_val else []
+
+                        if is_linkedin:
+                            if "linkedin" not in metadata_dict["tags"]:
+                                metadata_dict["tags"].append("linkedin")
+                            if "social_media" not in metadata_dict["tags"]:
+                                metadata_dict["tags"].append("social_media")
+                            metadata_dict["category"] = "Social Media"
+
+                        current_text_content_for_file = text_content if text_content is not None else ""
+                        post = frontmatter.Post(current_text_content_for_file, **metadata_dict)
+                        
+                        with open(metadata_path, 'wb') as f:
+                            frontmatter.dump(post, f)
                             
-                            # Ensure tags is a list
-                            if not metadata_dict.get("tags"):
-                                metadata_dict["tags"] = []
-                            elif isinstance(metadata_dict.get("tags"), str):
-                                # Convert comma-separated string to list
-                                metadata_dict["tags"] = [tag.strip() for tag in metadata_dict["tags"].split(",")]
-                                
-                            # Special handling for LinkedIn posts
-                            if is_linkedin:
-                                if "tags" not in metadata_dict:
-                                    metadata_dict["tags"] = []
-                                if "linkedin" not in metadata_dict["tags"]:
-                                    metadata_dict["tags"].append("linkedin")
-                                
-                            # Create post with frontmatter
-                            current_text_content = text_content if text_content is not None else ""
-                            post = frontmatter.Post(current_text_content, **metadata_dict)
-                            
-                            with open(metadata_path, 'wb') as f:
-                                frontmatter.dump(post, f)
-                                
-                            # Move source file to organized location
-                            shutil.move(input_path, output_path)
-                            
-                            print(f"Organized: {file_name} -> {output_path}")
-                        except json.JSONDecodeError:
-                            # Handle non-JSON response
-                            logger.warning(f"Non-JSON response from OpenAI for {file_name}. Falling back to basic_metadata.") # MODIFIED from print
-                            # Use basic metadata instead
-                            basic_metadata(input_path, output_path, metadata_path, file_name, file_type, text_content, extraction_method)
-                    else:
-                        # Handle case where ai_response_content is None (OpenAI call failed to produce usable content)
-                        logger.error(f"No valid content from OpenAI for {file_name}. Falling back to basic_metadata.") # MODIFIED
-                        basic_metadata(input_path, output_path, metadata_path, file_name, file_type, text_content or "", extraction_method)
-                        continue # Skip to next file
-                except Exception as e:
-                    logger.error(f"Error generating metadata for {file_name}: {str(e)}. Falling back to basic_metadata.") # MODIFIED from print
-                    # Use basic metadata instead
-                    basic_metadata(input_path, output_path, metadata_path, file_name, file_type, text_content, extraction_method)
-            else:
-                # No content extracted, use basic metadata
-                logger.info(f"No content extracted from {file_name}. Using basic_metadata.") # MODIFIED from print
+                        shutil.move(input_path, output_path)
+                        logger.info(f"Organized with AI summary: {file_name} -> {output_path}")
+
+                    else: 
+                        logger.warning(f"get_extract for '{file_name}' did not return a usable summary or failed. Summary: '{returned_summary}'. Proceeding with blank extract.")
+                        metadata_dict = {
+                            "title": f"Needs Review: {file_name}",
+                            "author": "Unknown",
+                            "date": today,
+                            "category": "Other",
+                            "tags": ["needs_review", "enrichment_failed"],
+                            "extract_content": "",  # Blank as per user request
+                            "parse_status": "enrichment_failed",
+                            "extraction_method": extraction_method,
+                            "file_type": file_type,
+                            "source": file_name,
+                            "reviewed": False,
+                            "reprocess_status": "none",
+                            "reprocess_rounds": "0",
+                            "source_url": None
+                        }
+                        current_text_content_for_file = text_content if text_content is not None else ""
+                        post = frontmatter.Post(current_text_content_for_file, **metadata_dict)
+                        with open(metadata_path, 'wb') as f:
+                            frontmatter.dump(post, f)
+                        shutil.move(input_path, output_path)
+                        logger.info(f"Organized '{file_name}' with enrichment_failed status and blank extract.")
+                        
+                except Exception as ge_exc: 
+                    logger.error(f"Error during get_extract call for '{file_name}': {str(ge_exc)}. Proceeding with blank extract.", exc_info=True)
+                    metadata_dict = {
+                        "title": f"Error Processing: {file_name}",
+                        "author": "Unknown",
+                        "date": today,
+                        "category": "Other",
+                        "tags": ["error", "enrichment_failed"],
+                        "extract_content": "",  # Blank as per user request
+                        "parse_status": "enrichment_failed",
+                        "extraction_method": extraction_method,
+                        "file_type": file_type,
+                        "source": file_name,
+                        "reviewed": False,
+                        "reprocess_status": "needs_review", # Flag for potential reprocessing
+                        "reprocess_rounds": "0",
+                        "source_url": None
+                    }
+                    current_text_content_for_file = text_content if text_content is not None else ""
+                    post = frontmatter.Post(current_text_content_for_file, **metadata_dict)
+                    with open(metadata_path, 'wb') as f:
+                        frontmatter.dump(post, f)
+                    shutil.move(input_path, output_path)
+                    logger.info(f"Organized '{file_name}' with error during enrichment and blank extract.")
+            else: 
+                logger.info(f"No content extracted from \'{file_name}\'. Using basic_metadata.")
                 basic_metadata(input_path, output_path, metadata_path, file_name, file_type, text_content, extraction_method)
                 
         except Exception as e:
