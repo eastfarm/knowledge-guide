@@ -855,6 +855,9 @@ def basic_metadata(input_path, output_path, metadata_path, file_name, file_type,
     """Creates basic metadata when OpenAI processing fails"""
     today = time.strftime("%Y-%m-%d")
     
+    # Ensure text_content is a string for safe operations
+    current_text_content = text_content if text_content is not None else ""
+    
     # Create basic metadata
     metadata_dict = {
         "title": f"Unprocessed: {file_name}",
@@ -862,8 +865,8 @@ def basic_metadata(input_path, output_path, metadata_path, file_name, file_type,
         "date": today,
         "category": "Other",
         "tags": ["unprocessed"],
-        "extract_title": "Content extraction failed",
-        "extract_content": text_content[:500] + "..." if text_content and len(text_content) > 500 else text_content,
+        # Use current_text_content which is guaranteed to be a string
+        "extract_content": current_text_content[:500] + "..." if len(current_text_content) > 500 else current_text_content,
         "parse_status": "basic",
         "extraction_method": extraction_method,
         "file_type": file_type,
@@ -875,7 +878,7 @@ def basic_metadata(input_path, output_path, metadata_path, file_name, file_type,
     }
     
     # Create frontmatter post
-    post = frontmatter.Post(text_content, **metadata_dict)
+    post = frontmatter.Post(current_text_content, **metadata_dict) # Use current_text_content
     
     # Save metadata file
     with open(metadata_path, 'wb') as f:
