@@ -394,12 +394,17 @@ def enrich_urls(urls, potential_titles=None):
 def get_extract(content, file_type=None, urls_metadata=None, log_f=None, is_linkedin=False):
     try:
         # Check if OpenAI API key is configured
-        if not openai.api_key:
+        api_key = os.getenv("OPENAI_API_KEY")
+        if not api_key or not api_key.strip():
             error_msg = "OpenAI API key not configured. Please set OPENAI_API_KEY environment variable."
             print(f"🚫 Error: {error_msg}")
+            logger.error(f"OpenAI API key is missing or invalid: '{api_key}'")
             if log_f:
                 log_f.write(f"OpenAI ERROR: {error_msg}\n")
             return "Missing API Key", "Extract failed: OpenAI API key not configured. Please add OPENAI_API_KEY to environment variables.", ["extraction_failed"]
+        
+        # Make sure the API key is set in openai module
+        openai.api_key = api_key
         
         print("🧠 Content sent to GPT (preview):\n", content[:500])
         
@@ -851,10 +856,19 @@ def organize_files(input_folder="inbox", output_folder="assets", metadata_folder
     
     print("File organization complete")
     
+    # Log out the final status for debugging
+    processed_count = len(inbox_files)
+    errors_count = len([f for f in os.listdir(output_folder) if f.endswith(".error")]) if os.path.exists(output_folder) else 0
+    metadata_count = len([f for f in os.listdir(metadata_folder) if f.endswith(".md")]) if os.path.exists(metadata_folder) else 0
+    
+    logger.info(f"Organize files summary - Input folder: {input_folder}, Files processed: {processed_count}, "
+                f"Metadata files created: {metadata_count}, Errors: {errors_count}")
+    
     # Return success and failure metrics
     return {
-        "success_count": len(inbox_files) - len([f for f in os.listdir(output_folder) if f.endswith(".error")]),
-        "failed_files": [(os.path.basename(f), "Processing failed") for f in os.listdir(output_folder) if f.endswith(".error")]
+        "success_count": metadata_count,
+        "processed_count": processed_count,
+        "failed_files": [(os.path.basename(f), "Processing failed") for f in os.listdir(output_folder) if f.endswith(".error")] if os.path.exists(output_folder) else []
     }
     
 def basic_metadata(input_path, output_path, metadata_path, file_name, file_type, text_content, extraction_method):

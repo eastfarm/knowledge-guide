@@ -18,6 +18,7 @@ from index import indexKB, searchKB
 import logging
 from datetime import datetime, timedelta
 import frontmatter
+import openai
 
 app = FastAPI()
 
@@ -30,6 +31,16 @@ logging.basicConfig(
     ]
 )
 logger = logging.getLogger("pkm-indexer")
+
+# Check OpenAI API key
+api_key = os.getenv("OPENAI_API_KEY")
+if not api_key:
+    logger.error("OpenAI API key (OPENAI_API_KEY) is not set in environment variables")
+else:
+    openai.api_key = api_key
+    logger.info(f"OpenAI API key found with length: {len(api_key)}")
+    # Set key in the module
+    openai.api_key = api_key
 
 # Add CORS middleware
 app.add_middleware(
@@ -489,7 +500,12 @@ def sync_drive():
             # 3. Run metadata extraction
             try:
                 log_f.write("\n## Processing files with organize_files()\n\n")
-                organize_result = organize_files()
+                organize_result = organize_files(
+                    input_folder=LOCAL_INBOX, 
+                    output_folder=LOCAL_SOURCES, 
+                    metadata_folder=LOCAL_METADATA,
+                    debug=True
+                )
                 
                 # Check if organize_result is None or not a dictionary
                 if not organize_result or not isinstance(organize_result, dict):
@@ -511,16 +527,45 @@ def sync_drive():
                     "status": "Files downloaded but processing failed", 
                     "downloaded": [f[1] for f in downloaded],
                     "debug": debug_info
-                }
-
-            # 4. Upload files and metadata
+                }                # 4. Upload files and metadata
             log_f.write("\n## Uploading processed files to Google Drive\n\n")
+            
+            # Debug - check the directories to see what's there
+            if os.path.exists(LOCAL_METADATA):
+                log_f.write(f"Files in {LOCAL_METADATA}: {os.listdir(LOCAL_METADATA)}\n")
+            else:
+                log_f.write(f"Directory {LOCAL_METADATA} does not exist\n")
+                
+            if os.path.exists(LOCAL_SOURCES):
+                log_f.write(f"Files in {LOCAL_SOURCES}: {os.listdir(LOCAL_SOURCES)}\n")
+                # Also check subdirs
+                for subdir in os.listdir(LOCAL_SOURCES):
+                    subdir_path = os.path.join(LOCAL_SOURCES, subdir)
+                    if os.path.isdir(subdir_path):
+                        log_f.write(f"Files in {subdir_path}: {os.listdir(subdir_path)}\n")
+            else:
+                log_f.write(f"Directory {LOCAL_SOURCES} does not exist\n")
+                
             for file_id, file_name in downloaded:
                 base = os.path.splitext(file_name)[0]
-                md_filename = next((f for f in os.listdir(LOCAL_METADATA) if base in f), None)
+                # More flexible matching for metadata files
+                md_filename = next((f for f in os.listdir(LOCAL_METADATA) if base.lower() in f.lower()), None) if os.path.exists(LOCAL_METADATA) else None
                 local_md_path = os.path.join(LOCAL_METADATA, md_filename) if md_filename else None
                 file_type = infer_file_type(file_name)
-                local_original_path = os.path.join(LOCAL_SOURCES, file_type, file_name)
+                
+                # Look in all possible locations for source file
+                if file_type != "other":
+                    source_dir = os.path.join(LOCAL_SOURCES, file_type)
+                    local_original_path = os.path.join(source_dir, file_name) if os.path.exists(source_dir) else None
+                else:
+                    local_original_path = os.path.join(LOCAL_SOURCES, "sources", file_name)
+                
+                if not local_original_path or not os.path.exists(local_original_path):
+                    # Try to find the file in any subdirectory
+                    for root, _, files in os.walk(LOCAL_SOURCES):
+                        if file_name in files:
+                            local_original_path = os.path.join(root, file_name)
+                            break
 
                 log_f.write(f"Processing {file_name}:\n")
                 try:
@@ -532,8 +577,46 @@ def sync_drive():
                         log_f.write(f"✅ Success (ID: {md_id})\n")
                     else:
                         log_f.write(f"  - ❌ Missing .md file at {local_md_path}\n")
-                        debug_info["error"] = f"Missing .md file for {file_name} at {local_md_path}"
-                        raise Exception(f"Missing .md file for {file_name}")
+                        # Let's create a basic metadata file as a fallback
+                        try:
+                            log_f.write(f"  - Attempting to create a fallback metadata file\n")
+                            # Create emergency fallback metadata file
+                            from organize import basic_metadata
+                            
+                            fallback_input = os.path.join(LOCAL_INBOX, file_name)
+                            if not os.path.exists(fallback_input):
+                                # Input file already moved, try to use original if available
+                                if local_original_path and os.path.exists(local_original_path):
+                                    fallback_input = local_original_path
+                                else:
+                                    raise Exception(f"Can't find original file for {file_name}")
+                                    
+                            fallback_output = local_original_path or os.path.join(LOCAL_SOURCES, file_type, file_name)
+                            os.makedirs(os.path.dirname(fallback_output), exist_ok=True)
+                            
+                            fallback_metadata = os.path.join(LOCAL_METADATA, f"{base}.md")
+                            
+                            log_f.write(f"  - Creating emergency metadata: input={fallback_input}, output={fallback_output}, metadata={fallback_metadata}\n")
+                            
+                            # Attempt to create basic metadata
+                            basic_metadata(fallback_input, fallback_output, fallback_metadata, 
+                                          file_name, file_type, "Failed to extract content", "emergency_fallback")
+                            
+                            # Try again with the newly created file
+                            md_filename = f"{base}.md"
+                            local_md_path = fallback_metadata
+                            
+                            if os.path.exists(local_md_path):
+                                log_f.write(f"  - Emergency metadata created, uploading {md_filename}... ")
+                                md_id = upload_file_to_drive(service, local_md_path, md_filename, metadata_id)
+                                debug_info["drive_folders"].append(f"Uploaded emergency metadata: {md_filename} to {metadata_id}")
+                                log_f.write(f"✅ Success (ID: {md_id})\n")
+                            else:
+                                raise Exception(f"Failed to create emergency metadata file")
+                        except Exception as emergency_error:
+                            log_f.write(f"  - ❌ Failed to create emergency metadata: {str(emergency_error)}\n")
+                            debug_info["error"] = f"Missing .md file for {file_name} at {local_md_path} and emergency creation failed"
+                            raise Exception(f"Missing .md file for {file_name}")
 
                     # Upload original
                     if os.path.exists(local_original_path):
@@ -609,6 +692,39 @@ def infer_file_type(filename):
     return "other"
 
 # ─── FILE STATS ENDPOINT ────────────────────────────────────────────
+
+@app.get("/system-status")
+def get_system_status():
+    """Get status of the overall system"""
+    openai_key = os.getenv("OPENAI_API_KEY")
+    
+    # Check local directories 
+    LOCAL_INBOX = "pkm/Inbox"
+    LOCAL_METADATA = "pkm/Processed/Metadata"
+    LOCAL_SOURCES = "pkm/Processed/Sources"
+    
+    status = {
+        "openai_api_configured": bool(openai_key and len(openai_key) > 10),
+        "google_api_configured": bool(os.environ.get("GOOGLE_TOKEN_JSON")),
+        "directories": {
+            "inbox": {
+                "exists": os.path.exists(LOCAL_INBOX),
+                "files": len(os.listdir(LOCAL_INBOX)) if os.path.exists(LOCAL_INBOX) else 0
+            },
+            "metadata": {
+                "exists": os.path.exists(LOCAL_METADATA),
+                "files": len(os.listdir(LOCAL_METADATA)) if os.path.exists(LOCAL_METADATA) else 0,
+                "files_list": os.listdir(LOCAL_METADATA)[:10] if os.path.exists(LOCAL_METADATA) else []
+            },
+            "sources": {
+                "exists": os.path.exists(LOCAL_SOURCES),
+                "subdirs": os.listdir(LOCAL_SOURCES) if os.path.exists(LOCAL_SOURCES) else []
+            }
+        },
+        "timestamp": datetime.now().isoformat()
+    }
+    
+    return status
 
 @app.get("/file-stats")
 def get_file_stats():
